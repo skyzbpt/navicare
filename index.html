@@ -387,6 +387,57 @@ function submitLineNotify(bId){
   });
 }
 
+/* ── LINE 好友同步至病患管理 ── */
+var _lineUsers=[];
+function lineBoundPatient(userId){return PATIENTS.find(function(p){return p.lineId===userId;});}
+function lineSyncModal(){
+  if(!RENDER_URL){showToast('請先在程式碼填入 RENDER_URL');return;}
+  modal('<div class="modal-head" style="background:#06C755">LINE 好友同步<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body" id="lineSyncBody"><div class="empty">讀取 LINE 好友中…</div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'patients\')">關閉</button><button class="btn" style="background:#06C755" onclick="lineSyncModal()">重新整理</button></div>');
+  fetch(RENDER_URL+'/line-users').then(function(r){return r.json();}).then(function(data){
+    _lineUsers=Array.isArray(data)?data:(data.users||[]);
+    renderLineSync();
+  }).catch(function(){
+    var el=document.getElementById('lineSyncBody');
+    if(el)el.innerHTML='<div class="empty">無法連線至 LINE 伺服器<br><span style="font-size:11px;color:var(--slate)">請確認 RENDER_URL 與伺服器的 /line-users 端點</span></div>';
+  });
+}
+function renderLineSync(){
+  var el=document.getElementById('lineSyncBody');if(!el)return;
+  if(!_lineUsers.length){el.innerHTML='<div class="empty">目前沒有 LINE 好友資料<br><span style="font-size:11px;color:var(--slate)">請病患先加入官方帳號並傳送任一訊息</span></div>';return;}
+  var bound=_lineUsers.filter(function(u){return lineBoundPatient(u.userId);}).length;
+  el.innerHTML='<div style="font-size:12px;color:var(--slate);margin-bottom:10px">共 '+_lineUsers.length+' 位好友，已綁定 '+bound+' 位</div>'+
+    _lineUsers.map(function(u,i){
+      var bp=lineBoundPatient(u.userId);
+      var pic=u.pictureUrl?'<img src="'+esc(u.pictureUrl)+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.outerHTML=\'<div style=&quot;width:40px;height:40px;border-radius:50%;background:#06C75522;flex-shrink:0&quot;></div>\'">':'<div style="width:40px;height:40px;border-radius:50%;background:#06C75522;display:flex;align-items:center;justify-content:center;color:#06C755;font-weight:700;flex-shrink:0">'+esc((u.displayName||'?').slice(0,1))+'</div>';
+      return '<div class="row" style="gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">'+pic+
+        '<div style="flex:1;min-width:0"><div style="font-weight:700">'+esc(u.displayName||'(未提供名稱)')+'</div><div style="font-size:10px;color:var(--slate);font-family:monospace;overflow:hidden;text-overflow:ellipsis">'+esc(u.userId)+'</div></div>'+
+        (bp?'<span class="tag green" style="flex-shrink:0">已綁 '+esc(bp.name)+'</span>':'<div class="row" style="gap:5px;flex-shrink:0"><button class="btn sm ghost" onclick="lineBindExisting('+i+')">綁定</button><button class="btn sm" style="background:#06C755" onclick="lineCreatePatient('+i+')">建為病患</button></div>')+
+        '</div>';
+    }).join('');
+}
+function lineCreatePatient(i){
+  var u=_lineUsers[i];if(!u)return;
+  var phone='LINE-'+String(u.userId).slice(-6);
+  if(getPatient(phone)){showToast('此好友已建立過病患');return;}
+  PATIENTS.push({phone:phone,name:u.displayName||'LINE好友',dob:'',idNum:'',gender:'',line:true,lineId:u.userId,note:'由 LINE 好友同步建立'});
+  renderLineSync();showToast('已建立病患並綁定 LINE');
+}
+function lineBindExisting(i){
+  var u=_lineUsers[i];if(!u)return;
+  if(!PATIENTS.length){showToast('尚無病患可綁定，請改用「建為病患」');return;}
+  var opts=PATIENTS.map(function(p){return '<option value="'+esc(p.phone)+'">'+esc(p.name)+' ('+esc(p.phone)+')</option>';}).join('');
+  modal('<div class="modal-head" style="background:#06C755">綁定到現有病患<button class="x" onclick="lineSyncModal()">&times;</button></div>'+
+    '<div class="modal-body"><div style="background:#f0fff8;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-weight:700">'+esc(u.displayName||u.userId)+'</div><div class="field"><label>選擇要綁定的病患</label><select id="lineBindSel">'+opts+'</select></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="lineSyncModal()">返回</button><button class="btn" style="background:#06C755" onclick="confirmLineBind(\''+esc(u.userId)+'\')">確認綁定</button></div>');
+}
+function confirmLineBind(userId){
+  var ph=document.getElementById('lineBindSel').value;var p=getPatient(ph);
+  if(p){p.lineId=userId;p.line=true;showToast('已綁定 LINE');}
+  lineSyncModal();
+}
+
 /* ============ Google / 角色 ============ */
 const GOOGLE_CLIENT_ID='488516957607-6pt8ofca357qrj5fgpjk8n67i6krvr4d.apps.googleusercontent.com';
 const EMAIL_WHITELIST={
@@ -906,7 +957,7 @@ views.patients=function(){
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
   return shell('patients','病患管理',body,
-    '<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
+    '<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" style="background:#06C755" onclick="lineSyncModal()">同步 LINE 好友</button><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
 };
 function filterPt(q){q=(q||'').toLowerCase();document.querySelectorAll('#ptBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 var _ptGender='';
