@@ -255,28 +255,8 @@ tbody tr:hover{background:var(--bg)}
 
 </head>
 <body>
-<div class="outer">
-  <div class="switcher">
-    <span class="sw-label">後台</span>
-    <button class="sw active" data-v="login">登入</button>
-    <button class="sw" data-v="dashboard">總覽</button>
-    <button class="sw" data-v="bookings">預約管理</button>
-    <button class="sw" data-v="patients">病患管理</button>
-    <button class="sw" data-v="soap">SOAP 病歷</button>
-    <button class="sw" data-v="analytics">營運分析</button>
-    <button class="sw" data-v="payroll">員工薪資</button>
-    <button class="sw" data-v="stamptax">印花稅</button>
-    <button class="sw" data-v="retention">客戶回流</button>
-    <button class="sw" data-v="education">衛教內容</button>
-    <button class="sw" data-v="schedule">排班設定</button>
-    <button class="sw" data-v="packages">課程設定</button>
-    <button class="sw" data-v="receipt">收據樣式</button>
-    <button class="sw" data-v="clinic">診所管理</button>
-    <span class="sw-label" style="margin-left:6px">客戶頁</span>
-    <button class="sw" data-v="book">線上預約</button>
-    <button class="sw" data-v="intake">初診問卷</button>
-  </div>
-  <div class="frame" id="frame"></div>
+<div class="outer" style="padding:0;max-width:100%">
+  <div class="frame" id="frame" style="border-radius:0;min-height:100vh"></div>
 </div>
 <div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
 <div id="sToast"></div>
@@ -836,30 +816,75 @@ function showReceipt(b,name,dob,idn){
   modal('<div class="modal-head no-print" style="background:'+tColor(b.t)+'">收據預覽<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body" style="padding:12px;background:var(--bg)">'+receiptHTML(b,name,dob,idn)+'</div><div class="modal-foot no-print"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn" onclick="printReceiptWin()">列印 / PDF</button></div>');
 }
 
-/* Google Calendar 同步（僅在已授權時運作） */
+/* Google Calendar 同步 */
 var gcalToken=null,gcalClient=null;
+function loadGsi(cb){
+  if(typeof google!=='undefined'&&google.accounts&&google.accounts.oauth2){cb();return;}
+  var existing=document.getElementById('__gsi');
+  if(existing){existing.addEventListener('load',cb);return;}
+  var s=document.createElement('script');s.id='__gsi';s.src='https://accounts.google.com/gsi/client';
+  s.onload=function(){cb();};
+  s.onerror=function(){showToast('Google SDK 載入失敗，請確認網路');};
+  document.head.appendChild(s);
+}
 function ensureGCal(cb){
   if(gcalToken){cb();return;}
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('請先設定 Google Client ID');return;}
-  if(typeof google==='undefined'||!google.accounts||!google.accounts.oauth2){showToast('Google SDK 尚未載入');return;}
-  if(!gcalClient){
-    gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'https://www.googleapis.com/auth/calendar.events',callback:function(r){if(r.error){showToast('授權失敗');return;}gcalToken=r.access_token;cb();}});
-  }
-  gcalClient.requestAccessToken({prompt:'consent'});
+  loadGsi(function(){
+    if(!gcalClient){
+      gcalClient=google.accounts.oauth2.initTokenClient({
+        client_id:GOOGLE_CLIENT_ID,
+        scope:'https://www.googleapis.com/auth/calendar.events',
+        callback:function(r){
+          if(r.error){showToast('行事曆授權失敗：'+r.error);return;}
+          gcalToken=r.access_token;cb();
+        }
+      });
+    }
+    gcalClient.requestAccessToken({prompt:'consent'});
+  });
 }
+function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function gcalUpsert(b){
-  var sv=svcOf(b.svc);var hm=b.time.split(':');
-  var start=b.date+'T'+String(hm[0]).padStart(2,'0')+':'+String(hm[1]).padStart(2,'0')+':00+08:00';
-  var end=new Date(new Date(start).getTime()+sv.dur*60000).toISOString().slice(0,19)+'+08:00';
-  var body={summary:b.name+' - '+sv.name,description:'治療師：'+tName(b.t)+'\n電話：'+b.phone,start:{dateTime:start,timeZone:'Asia/Taipei'},end:{dateTime:end,timeZone:'Asia/Taipei'}};
-  return fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{method:'POST',headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var sv=svcOf(b.svc);
+  var startStr=b.date+'T'+fmtTimeMin(b.start)+':00+08:00';
+  var endStr=b.date+'T'+fmtTimeMin(b.start+sv.dur)+':00+08:00';
+  var body={
+    summary:b.name+'｜'+sv.name,
+    description:'治療師：'+tName(b.t)+'\n電話：'+b.phone+(b.note?'\n備註：'+b.note:''),
+    start:{dateTime:startStr,timeZone:'Asia/Taipei'},
+    end:{dateTime:endStr,timeZone:'Asia/Taipei'}
+  };
+  var url='https://www.googleapis.com/calendar/v3/calendars/primary/events';
+  var method='POST';
+  if(b.gcalEventId){url+='/'+b.gcalEventId;method='PATCH';}
+  return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});})
+    .then(function(r){
+      if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}
+      var msg=(r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status);
+      throw new Error(msg);
+    });
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆');});});}
+function syncOne(id){
+  var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
+  ensureGCal(function(){
+    gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');})
+      .catch(function(e){showToast('同步失敗：'+e.message);});
+  });
+}
 function syncAllGCal(){
   ensureGCal(function(){
     var list=BOOKINGS.filter(function(b){return b.status!=='cancelled';});
     if(!list.length){showToast('目前沒有可同步的預約');return;}
-    Promise.all(list.map(function(b){return gcalUpsert(b);})).then(function(){showToast('已同步 '+list.length+' 筆');});
+    showToast('同步中…');
+    Promise.all(list.map(function(b){return gcalUpsert(b).then(function(){return true;}).catch(function(e){b._syncErr=e.message;return false;});}))
+      .then(function(res){
+        var ok=res.filter(function(x){return x;}).length;
+        var firstErr=list.find(function(b){return b._syncErr;});
+        if(ok===list.length)showToast('已同步全部 '+ok+' 筆 ✓');
+        else showToast('同步 '+ok+'/'+list.length+' 筆，失敗原因：'+(firstErr?firstErr._syncErr:'未知'));
+      });
   });
 }
 
@@ -1440,7 +1465,16 @@ function resetIntake(){_iStep=1;_iData={};_iGender='';document.getElementById('f
 function go(v){
   if(typeof views[v]!=='function'){showToast('此頁面開發中');return;}
   var pub=['login','book','intake'];
-  if(pub.indexOf(v)<0&&currentUser&&currentUser.pages.indexOf(v)<0){showToast('您沒有此頁面的存取權限');return;}
+  /* 後台頁面必須登入才能進入 */
+  if(pub.indexOf(v)<0){
+    if(!currentUser){
+      document.getElementById('frame').innerHTML=views.login();
+      document.querySelectorAll('.sw').forEach(function(b){b.classList.toggle('active',b.dataset.v==='login');});
+      showToast('請先登入');
+      return;
+    }
+    if(currentUser.pages.indexOf(v)<0){showToast('您沒有此頁面的存取權限');return;}
+  }
   document.getElementById('frame').innerHTML=views[v]();
   document.querySelectorAll('.sw').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
   if(v==='bookings')calToday();
