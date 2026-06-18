@@ -252,7 +252,7 @@ tbody tr:hover{background:var(--bg)}
 }
 @media(max-width:560px){.stat-grid,.grid2{grid-template-columns:1fr}}
 </style>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+
 </head>
 <body>
 <div class="outer">
@@ -336,10 +336,83 @@ let CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY011600
 
 const BODY_REGIONS=['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂關節','左髖','右髖','左膝','右膝','左踝','右踝','左肘','右肘','左腕','右腕'];
 
+/* ============ LINE 推播 ============ */
+var RENDER_URL=''; // 填入你的 Render 網址，例如 https://navigator-line-proxy.onrender.com
+
+function sendLineMsg(userId,message,cb){
+  if(!userId){showToast('此病患尚未綁定 LINE');return;}
+  if(!RENDER_URL){showToast('請先填入 RENDER_URL');return;}
+  fetch(RENDER_URL+'/send-line',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({userId:userId,message:message})
+  }).then(function(r){
+    var msg=r.ok?'LINE 已送出 ✓':'LINE 傳送失敗';
+    showToast(msg);if(r.ok&&cb)cb();
+  }).catch(function(){showToast('無法連線至 LINE 伺服器');});
+}
+
+function lineTemplates(b){
+  var sv=svcOf(b.svc);
+  return {
+    confirm:'【領航物理治療所】\n您的預約已確認！\n📅 '+b.date+'　'+b.time+'\n🏥 '+sv.name+'\n如需更改請來電 (02)2826-1698',
+    remind:'【領航物理治療所】\n提醒您明日有預約 🔔\n📅 '+b.date+'　'+b.time+'\n🏥 '+sv.name+'\n請準時到診，謝謝！',
+    cancel:'【領航物理治療所】\n很抱歉，您於 '+b.date+' '+b.time+' 的預約已取消。\n如需重新預約請來電 (02)2826-1698。',
+    complete:'【領航物理治療所】\n感謝您今日的到診 🙏\n如有任何不適歡迎回診或來電詢問。\n祝您恢復順利！'
+  };
+}
+
+function lineNotifyModal(bId){
+  var b=BOOKINGS.find(function(x){return x.id===bId;});if(!b)return;
+  var p=getPatient(b.phone);
+  if(!p||!p.lineId){showToast('此病患尚未綁定 LINE');return;}
+  var tpl=lineTemplates(b);
+  var btnClass='pay-pill';
+  modal('<div class="modal-head" style="background:#06C755">LINE 推播通知<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body">'+
+    '<div style="background:#f0fff8;border:1px solid #b2f0d8;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px">'+
+    '<b style="color:#06C755">📱 '+esc(p.name)+'</b>　<span style="color:var(--slate)">'+esc(p.lineId)+'</span></div>'+
+    '<div class="sec-label">快速範本</div>'+
+    '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
+    '<button class="pay-pill sel" onclick="pickLineTpl(\'confirm\','+bId+')">預約確認</button>'+
+    '<button class="pay-pill" onclick="pickLineTpl(\'remind\','+bId+')">看診提醒</button>'+
+    '<button class="pay-pill" onclick="pickLineTpl(\'cancel\','+bId+')">取消通知</button>'+
+    '<button class="pay-pill" onclick="pickLineTpl(\'complete\','+bId+')">完診感謝</button>'+
+    '</div>'+
+    '<div class="field"><label>訊息內容</label>'+
+    '<textarea id="lineMsg" style="height:130px;resize:vertical;line-height:1.8">'+esc(tpl.confirm)+'</textarea></div>'+
+    '<div style="font-size:11px;color:var(--slate)">可直接編輯訊息內容後再送出</div>'+
+    '</div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button>'+
+    '<button class="btn" style="background:#06C755" onclick="submitLineNotify('+bId+')">送出 LINE 通知</button></div>');
+  // 存範本備查
+  window._lineTpls={confirm:tpl.confirm,remind:tpl.remind,cancel:tpl.cancel,complete:tpl.complete};
+}
+
+function pickLineTpl(key,bId){
+  var el=document.getElementById('lineMsg');if(!el)return;
+  el.value=window._lineTpls[key]||'';
+  document.querySelectorAll('#modalBox .pay-pill').forEach(function(b){b.classList.remove('sel');});
+  event.target.classList.add('sel');
+}
+
+function submitLineNotify(bId){
+  var b=BOOKINGS.find(function(x){return x.id===bId;});if(!b)return;
+  var p=getPatient(b.phone);if(!p||!p.lineId)return;
+  var msg=(document.getElementById('lineMsg').value||'').trim();
+  if(!msg){showToast('請輸入訊息內容');return;}
+  sendLineMsg(p.lineId,msg,function(){
+    if(BK_LOG[bId])BK_LOG[bId].push(new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)+' LINE 通知已送出');
+    closeModal();
+  });
+}
+
 /* ============ Google / 角色 ============ */
-const GOOGLE_CLIENT_ID='YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID='488516957607-6pt8ofca357qrj5fgpjk8n67i6krvr4d.apps.googleusercontent.com';
 const EMAIL_WHITELIST={
-  'sky@example.com':{name:'Sky 物理治療師',therapistId:'Sky',role:'admin'}
+  'nycuptc@gmail.com':{name:'櫃檯',therapistId:null,role:'admin'},
+  'skyzbpt@gmail.com':{name:'Sky',therapistId:'Sky',role:'admin'},
+  'yewfir@gmail.com':{name:'院長',therapistId:null,role:'admin'}
 };
 const ROLE_PAGES={
   admin:['dashboard','bookings','patients','soap','analytics','payroll','stamptax','retention','education','schedule','packages','receipt','clinic'],
@@ -348,28 +421,59 @@ const ROLE_PAGES={
 };
 let currentUser=null;
 
-function decodeJWT(t){try{var b=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');return JSON.parse(decodeURIComponent(escape(atob(b))));}catch(e){return null;}}
 function onGoogleSignIn(resp){
-  var p=decodeJWT(resp.credential);
-  if(!p){showLoginError('登入失敗，請再試一次');return;}
-  var cfg=EMAIL_WHITELIST[p.email];
-  if(!cfg){showLoginError('此帳號未獲授權\n'+p.email);return;}
-  currentUser={email:p.email,name:cfg.name||p.name,avatar:p.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
-  go('dashboard');
-}
-function signOut(){currentUser=null;try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}go('login');}
-function showLoginError(msg){var el=document.getElementById('loginErr');if(el){el.style.display='block';el.textContent=msg;}else{showToast(msg);}}
-function renderGoogleButton(){
-  var mount=document.getElementById('gBtn');if(!mount)return;
-  if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){
-    mount.innerHTML='<div style="padding:14px 16px;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:10px;font-size:12px;color:var(--navy);line-height:1.8;text-align:left">尚未設定 Google 登入<br><span style="font-size:11px;color:var(--slate)">部署前請將 GOOGLE_CLIENT_ID 換成您的 OAuth Client ID，並把授權 Gmail 加入 EMAIL_WHITELIST。預覽期間請用上方切換列瀏覽各頁。</span></div>';
-    return;
-  }
-  if(typeof google==='undefined'||!google.accounts||!google.accounts.id){setTimeout(renderGoogleButton,300);return;}
   try{
-    google.accounts.id.initialize({client_id:GOOGLE_CLIENT_ID,callback:onGoogleSignIn});
-    google.accounts.id.renderButton(mount,{type:'standard',size:'large',theme:'outline',text:'signin_with',shape:'rectangular',width:280});
-  }catch(e){mount.innerHTML='<div style="font-size:12px;color:var(--danger)">Google 登入初始化失敗</div>';}
+    var b=resp.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    var p=JSON.parse(decodeURIComponent(escape(atob(b))));
+    var cfg=EMAIL_WHITELIST[p.email];
+    if(!cfg){showLoginError('此帳號未獲授權\n'+p.email);return;}
+    currentUser={email:p.email,name:cfg.name||p.name,avatar:p.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
+    go('dashboard');
+  }catch(e){showLoginError('登入失敗，請再試一次');}
+}
+function showLoginError(msg){var el=document.getElementById('loginErr');if(el){el.style.display='block';el.textContent=msg;}else{showToast(msg);}}
+function signOut(){currentUser=null;try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}go('login');}
+function triggerGoogleLogin(){
+  var btn=document.getElementById('gSignInBtn');
+  function setLoading(v){if(btn){btn.style.opacity=v?'.6':'1';btn.style.pointerEvents=v?'none':'';}}
+  /* 未設定 Client ID：直接進入預覽模式 */
+  if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){
+    currentUser={email:'preview@navigator.com',name:'預覽模式',avatar:'',role:'admin',therapistId:'Sky',pages:ROLE_PAGES['admin']};
+    go('dashboard');return;
+  }
+  setLoading(true);
+  function initAndLogin(){
+    try{
+      google.accounts.id.initialize({client_id:GOOGLE_CLIENT_ID,callback:function(resp){setLoading(false);onGoogleSignIn(resp);}});
+      google.accounts.id.prompt(function(n){
+        if(n.isNotDisplayed()||n.isSkippedMoment()){
+          var client=google.accounts.oauth2.initTokenClient({
+            client_id:GOOGLE_CLIENT_ID,scope:'openid email profile',
+            callback:function(r){
+              setLoading(false);
+              if(r.error){showLoginError('登入失敗：'+r.error);return;}
+              fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+r.access_token}})
+                .then(function(res){return res.json();}).then(function(info){
+                  var cfg=EMAIL_WHITELIST[info.email];
+                  if(!cfg){showLoginError('此帳號未獲授權\n'+info.email);return;}
+                  currentUser={email:info.email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
+                  go('dashboard');
+                }).catch(function(){setLoading(false);showLoginError('無法取得帳號資訊，請再試一次');});
+            }
+          });
+          client.requestAccessToken({prompt:'select_account'});
+        }
+      });
+    }catch(e){setLoading(false);showLoginError('登入初始化失敗：'+e.message);}
+  }
+  if(typeof google!=='undefined'&&google.accounts){initAndLogin();}
+  else{
+    var s=document.createElement('script');
+    s.src='https://accounts.google.com/gsi/client';
+    s.onload=function(){initAndLogin();};
+    s.onerror=function(){setLoading(false);showLoginError('Google SDK 載入失敗，請確認網路後再試');};
+    document.head.appendChild(s);
+  }
 }
 
 /* ============ 共用工具 ============ */
@@ -464,11 +568,13 @@ var views={};
 views.login=function(){
   return '<div class="login-wrap"><div class="login-box">'+
     '<div class="login-logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>'+
-    '<h2>領航診所管理後台</h2>'+
-    '<p>僅限使用診所授權的 Gmail 帳號登入</p>'+
-    '<div id="gBtn" style="display:flex;justify-content:center;min-height:44px"></div>'+
+    '<h2>領航物理治療所</h2>'+
+    '<p style="margin-bottom:28px">診所管理後台</p>'+
+    '<button id="gSignInBtn" onclick="triggerGoogleLogin()" style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 20px;background:#fff;color:#3c4043;border:1.5px solid #dadce0;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);font-family:inherit">'+
+      '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.08 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-3.59-13.46-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>'+
+      '使用 Gmail 帳號登入</button>'+
     '<div id="loginErr" style="display:none;margin-top:14px;padding:10px 14px;background:#fff0f0;border:1px solid #ffc9c9;border-radius:8px;font-size:12px;color:#c62828;white-space:pre-line;text-align:left"></div>'+
-    '<img alt="" src="data:image/png;base64,iVBOR" onerror="renderGoogleButton()" style="display:none">'+
+    '<div style="margin-top:20px;font-size:11px;color:var(--slate)">僅限診所授權帳號登入</div>'+
     '</div></div>';
 };
 
@@ -611,7 +717,7 @@ function bkDetail(id){
     '<div class="field"><label>備註</label><textarea id="eb-note" style="height:60px;resize:vertical">'+esc(b.note)+'</textarea></div></div>'+
     '<div class="edit-panel" id="bkp-status"><div class="sec-label">預約狀態</div><div class="status-picker" id="bkSp">'+sp+'</div></div>'+
     '<div class="edit-panel" id="bkp-log"><div class="sec-label">變更紀錄</div>'+log+'</div>'+
-    '<div class="modal-foot" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn danger sm" onclick="delBk('+id+')">刪除</button><button class="btn ghost sm" onclick="checkoutModal('+id+')">結帳</button></div><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn" onclick="saveBk('+id+')">儲存</button></div></div>');
+    '<div class="modal-foot" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn danger sm" onclick="delBk('+id+')">刪除</button><button class="btn ghost sm" onclick="checkoutModal('+id+')">結帳</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="lineNotifyModal('+id+')">LINE 通知</button></div><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn" onclick="saveBk('+id+')">儲存</button></div></div>');
 }
 function bkTab(btn,name){
   btn.parentNode.querySelectorAll('.edit-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');
@@ -1338,7 +1444,6 @@ function go(v){
   document.getElementById('frame').innerHTML=views[v]();
   document.querySelectorAll('.sw').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
   if(v==='bookings')calToday();
-  if(v==='login')setTimeout(renderGoogleButton,60);
 }
 document.getElementById('modalBg').addEventListener('click',function(e){if(e.target.id==='modalBg')closeModal();});
 document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.v);});});
