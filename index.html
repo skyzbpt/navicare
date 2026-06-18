@@ -317,7 +317,7 @@ let CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY011600
 const BODY_REGIONS=['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂關節','左髖','右髖','左膝','右膝','左踝','右踝','左肘','右肘','左腕','右腕'];
 
 /* ============ LINE 推播 ============ */
-var RENDER_URL=''; // 填入你的 Render 網址，例如 https://navigator-line-proxy.onrender.com
+var RENDER_URL='https://line-webhook-x1ux.onrender.com'; // 你的 Render 伺服器網址
 
 function sendLineMsg(userId,message,cb){
   if(!userId){showToast('此病患尚未綁定 LINE');return;}
