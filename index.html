@@ -312,7 +312,7 @@ const PT_TAG_DATA={};
 
 const T_SVC_RATES={};
 
-let CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY01160081號',owner:'巫俊杉',address:'台北市北投區西安街二段167號3樓',tel:'(02) 2826-1698',calendarId:'primary'};
+let CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY01160081號',owner:'巫俊杉',address:'台北市北投區西安街二段167號3樓',tel:'（02）2826-1698',calendarId:'primary'};
 
 let PAYMENTS=[];
 let PAYMENT_ID=1000;
@@ -771,15 +771,18 @@ function renderCal(){
     var lvMark=lv.length?'<div style="display:flex;gap:2px;justify-content:center;margin-top:2px">'+lv.map(function(x){return '<span class="cal-dot" style="background:var(--danger)" title="'+esc(x.name)+' 休診"></span>';}).join('')+'</div>':'';
     h+='<th style="text-align:center;color:'+(t?'var(--mint-d)':'var(--slate)')+'">週'+DOW[(d.getDay()+6)%7]+'<br><span style="font-size:13px;color:'+(t?'var(--mint-d)':'var(--ink)')+'">'+d.getDate()+'</span>'+lvMark+'</th>';});
   h+='</tr></thead><tbody>';
-  for(var m=510;m<1320;m+=60){
-    h+='<tr><td style="font-size:11px;color:var(--slate);text-align:right;vertical-align:top">'+String(Math.floor(m/60)).padStart(2,'0')+':00</td>';
+  /* 08:00(480) – 22:00(1320)，每 15 分鐘一列 */
+  for(var m=480;m<1320;m+=15){
+    var isHour=m%60===0;
+    h+='<tr><td style="font-size:10px;color:var(--slate);text-align:right;vertical-align:top;white-space:nowrap;padding-right:3px">'+(isHour?String(m/60).padStart(2,'0')+':00':'')+'</td>';
     days.forEach(function(d){
       var ds=dstr(d);
       var working=leaveTs.some(function(t){return isWorkingSlot(t.id,ds,m);});
       var onLeave=schedAny&&!working;
-      var list=BOOKINGS.filter(function(b){return b.date===ds&&b.start>=m&&b.start<m+60&&calActive(b.t);});
-      h+='<td style="border:1px solid var(--line);padding:2px;vertical-align:top;min-width:90px;height:42px'+(onLeave?';background:#fef2f2':'')+'">';
-      list.forEach(function(b){var s=ST[b.status||'confirmed'];h+='<div onclick="bkDetail('+b.id+')" style="background:'+tColor(b.t)+'18;border-left:3px solid '+tColor(b.t)+';border-radius:4px;padding:2px 5px;cursor:pointer;margin-bottom:2px"><div style="font-size:11px;font-weight:700;color:'+tColor(b.t)+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name)+'</div><div style="font-size:10px;color:var(--slate)">'+esc(svcOf(b.svc).name)+' <span style="color:'+s.bg+'">'+s.label+'</span></div></div>';});
+      var list=BOOKINGS.filter(function(b){return b.date===ds&&b.start>=m&&b.start<m+15&&calActive(b.t);});
+      var borderTop=isHour?'border-top:1px solid var(--line);':'border-top:1px solid #f0f4f6;';
+      h+='<td style="border-left:1px solid var(--line);border-right:1px solid var(--line);'+borderTop+'padding:1px 2px;vertical-align:top;min-width:90px;height:22px'+(onLeave?';background:#fef2f2':'')+'">';
+      list.forEach(function(b){var s=ST[b.status||'confirmed'];h+='<div onclick="bkDetail('+b.id+')" style="background:'+tColor(b.t)+'18;border-left:3px solid '+tColor(b.t)+';border-radius:3px;padding:1px 5px;cursor:pointer;margin-bottom:1px"><div style="font-size:11px;font-weight:700;color:'+tColor(b.t)+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name)+' <span style="font-weight:400;color:var(--slate)">'+esc(svcOf(b.svc).name)+'</span></div></div>';});
       h+='</td>';
     });
     h+='</tr>';
@@ -805,7 +808,7 @@ function addBkModal(){
     '<div class="field"><label>搜尋現有病患</label><div class="search-wrap" style="width:100%"><input id="nb-search" placeholder="輸入姓名或電話查詢" oninput="searchBkPatient(this.value)" style="width:100%"></div><div id="nb-results" style="margin-top:4px"></div></div>'+
     '<div class="grid2"><div class="field"><label>姓名</label><input id="nb-name" placeholder="姓名"></div><div class="field"><label>電話</label><input id="nb-phone" placeholder="09xx-xxx-xxx"></div></div>'+
     '<div class="grid2"><div class="field"><label>治療師</label><select id="nb-t">'+tOpts+'</select></div><div class="field"><label>服務</label><select id="nb-svc">'+sOpts+'</select></div></div>'+
-    '<div class="grid2"><div class="field"><label>日期</label><input id="nb-date" type="date" value="'+todayStr()+'"></div><div class="field"><label>時間</label><input id="nb-time" type="time" value="09:00" min="08:00" max="22:00" step="300"></div></div>'+
+    '<div class="grid2"><div class="field"><label>日期</label><input id="nb-date" type="date" value="'+todayStr()+'"></div><div class="field"><label>時間</label><input id="nb-time" type="time" value="09:00" min="08:00" max="22:00" step="900"></div></div>'+
     '<div class="field"><label>備註</label><textarea id="nb-note" style="height:54px;resize:none"></textarea></div>'+
     '<label class="row" style="font-size:13px;gap:8px;margin-top:4px"><input type="checkbox" id="nb-line" checked style="width:auto"> 預約成立後推播 LINE 通知（需已綁定）</label>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitBk()">建立</button></div>');
@@ -981,7 +984,7 @@ function receiptHTML(b,name,dob,idn){
   return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+genReceiptNo()+'</div></div>'+
     '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+dob+'</span></div>':'')+(idn?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+esc(idn)+'</span></div>':'')+'</div>'+
     '<div class="rc-sect"><div class="rc-st">治療資訊</div><div class="rc-r"><span class="rc-k">治療師</span><span class="rc-v">'+esc(tName(b.t))+'</span></div><div class="rc-r"><span class="rc-k">日期時間</span><span class="rc-v">'+b.date+' '+b.time+'</span></div><div class="rc-r"><span class="rc-k">項目</span><span class="rc-v">'+esc(sv.name)+' ('+sv.dur+'分)</span></div><div class="rc-r"><span class="rc-k">付款方式</span><span class="rc-v">'+pay+'</span></div>'+(b.pay==='transfer'&&b.transferLast5?'<div class="rc-r"><span class="rc-k">匯款後五碼</span><span class="rc-v">'+esc(b.transferLast5)+'</span></div><div class="rc-r"><span class="rc-k">匯款日期</span><span class="rc-v">'+esc(b.transferDate||'')+'</span></div>':'')+'<div class="rc-total"><span>實收金額</span><span>'+fmtNT(sv.price)+'</span></div></div>'+
-    '<div class="rc-foot">機構：'+esc(CLINIC_INFO.name)+'　'+esc(CLINIC_INFO.reg)+'　負責人：'+esc(CLINIC_INFO.owner)+'<br>地址：'+esc(CLINIC_INFO.address)+'　電話：'+esc(CLINIC_INFO.tel)+'</div>'+
+    '<div class="rc-foot">機構：'+esc(CLINIC_INFO.name)+'（'+esc(CLINIC_INFO.reg)+'）　負責人：'+esc(CLINIC_INFO.owner)+'<br>地址：'+esc(CLINIC_INFO.address)+'　電話：'+esc(CLINIC_INFO.tel)+'</div>'+
     '<div class="rc-stamps"><div class="rc-stamp"><div class="sl">收據章</div>'+stampClinic()+'</div><div class="rc-stamp"><div class="sl">印花章</div>'+stampOwner()+'</div><div class="rc-stamp"><div class="sl">治療師章</div>'+stampT(b.t)+'</div></div></div>';
 }
 var _rcData=null;
