@@ -1127,8 +1127,8 @@ function buildNameSeal(nm,w,h){
     'font-size="'+fs+'" font-weight="900" letter-spacing="1" '+
     'font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';
   return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0">'+
-    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="6" fill="#c0392b"/>'+
-    '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="4" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>'+
+    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="6" fill="#fff" stroke="#c0392b" stroke-width="2.5"/>'+
+    '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="4" fill="none" stroke="#c0392b" stroke-width="1"/>'+
     tx+'</svg>';
 }
 function stampT(tid){
@@ -1142,7 +1142,7 @@ function receiptHTML(b,name,dob,idn){
   return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+genReceiptNo()+'</div></div>'+
     '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+dob+'</span></div>':'')+(idn?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+esc(idn)+'</span></div>':'')+'</div>'+
     '<div class="rc-sect"><div class="rc-st">治療資訊</div><div class="rc-r"><span class="rc-k">治療師</span><span class="rc-v">'+esc(tName(b.t))+'</span></div><div class="rc-r"><span class="rc-k">日期時間</span><span class="rc-v">'+b.date+' '+b.time+'</span></div><div class="rc-r"><span class="rc-k">項目</span><span class="rc-v">'+esc(sv.name)+' ('+sv.dur+'分)</span></div><div class="rc-r"><span class="rc-k">付款方式</span><span class="rc-v">'+pay+'</span></div>'+(b.pay==='transfer'&&b.transferLast5?'<div class="rc-r"><span class="rc-k">匯款後五碼</span><span class="rc-v">'+esc(b.transferLast5)+'</span></div><div class="rc-r"><span class="rc-k">匯款日期</span><span class="rc-v">'+esc(b.transferDate||'')+'</span></div>':'')+'<div class="rc-total"><span>實收金額</span><span>'+fmtNT(sv.price)+'</span></div></div>'+
-    '<div class="rc-foot">機構：'+esc(CLINIC_INFO.name)+'（'+esc(CLINIC_INFO.reg)+'）　負責人：'+esc(CLINIC_INFO.owner)+'<br>地址：'+esc(CLINIC_INFO.address)+'　電話：'+esc(CLINIC_INFO.tel)+'</div>'+
+    
     '<div class="rc-stamps"><div class="rc-stamp"><div class="sl">收據章</div>'+stampClinic()+'</div><div class="rc-stamp"><div class="sl">印花章</div>'+stampOwner()+'</div><div class="rc-stamp"><div class="sl">治療師章</div>'+stampT(b.t)+'</div></div></div>';
 }
 var _rcData=null;
