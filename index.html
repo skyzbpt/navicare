@@ -321,6 +321,7 @@ let PAYMENT_ID=1000;
 let STAMPS={clinic:'',owner:''};
 const STAMP_T={}; // 各治療師印章 base64，key 為 therapistId
 let CLINIC_LOGO=''; // 收據抬頭 Logo（base64），未上傳則顯示診所名稱文字
+let LOGIN_LOGO='';  // 登入頁 Logo（base64），未上傳則顯示預設圖示
 
 const BODY_REGIONS=['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂關節','左髖','右髖','左膝','右膝','左踝','右踝','左肘','右肘','左腕','右腕'];
 
@@ -695,7 +696,14 @@ var ICO={
   receipt:'<rect x="2" y="7" width="20" height="5"/><polyline points="20 12 20 22 4 22 4 12"/><line x1="12" y1="7" x2="12" y2="22"/>',
   clinic:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'
 };
-function ico(id){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">'+(ICO[id]||'')+'</svg>';}
+function brandLogoEl(){
+  if(LOGIN_LOGO)return '<img src="'+LOGIN_LOGO+'" style="width:28px;height:28px;object-fit:contain;border-radius:6px">';
+  return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+}
+function ico(id){
+  if(id==='clinic'&&LOGIN_LOGO)return '<img src="'+LOGIN_LOGO+'" style="width:17px;height:17px;object-fit:contain;border-radius:3px;opacity:.9">';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">'+(ICO[id]||'')+'</svg>';
+}
 
 function sidebar(active){
   var allow=(currentUser&&currentUser.pages)||[];
@@ -706,7 +714,7 @@ function sidebar(active){
   var report=it('analytics','營運分析')+it('payments','消費記錄')+it('payroll','員工薪資')+it('stamptax','印花稅')+it('retention','客戶回流');
   var setting=it('education','衛教內容')+it('schedule','排班設定')+it('packages','課程設定')+it('receipt','收據樣式')+it('clinic','診所管理');
   return '<aside class="sidebar">'+
-    '<div class="brand"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>'+
+    '<div class="brand"><div class="ic" style="'+(LOGIN_LOGO?'background:transparent;':'')+'display:flex;align-items:center;justify-content:center">'+brandLogoEl()+'</div>'+
     '<div><b>領航物理治療所</b><span>管理後台</span></div></div>'+
     '<nav class="menu">'+
     grp('核心',core)+grp('報表',report)+grp('設定',setting)+
@@ -722,7 +730,9 @@ var views={};
 /* ============ 登入 ============ */
 views.login=function(){
   return '<div class="login-wrap"><div class="login-box">'+
-    '<div class="login-logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>'+
+    (LOGIN_LOGO
+      ? '<div style="width:100px;height:100px;border-radius:18px;overflow:hidden;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;background:var(--navy-l)"><img src="'+LOGIN_LOGO+'" style="max-width:100%;max-height:100%;object-fit:contain"></div>'
+      : '<div class="login-logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>')+
     '<h2>領航物理治療所</h2>'+
     '<p style="margin-bottom:28px">診所管理後台</p>'+
     '<button id="gSignInBtn" onclick="triggerGoogleLogin()" style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 20px;background:#fff;color:#3c4043;border:1.5px solid #dadce0;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);font-family:inherit">'+
@@ -1030,6 +1040,22 @@ function confirmDelBk(id){
 var _coPay='cash';
 var _coPkg=null;
 var _coSvcPrice=0;
+var _coDiscount=0;
+function updateCoTotal(){
+  var disc=Math.max(0,Number((document.getElementById('coDiscount')||{}).value)||0);
+  _coDiscount=disc;
+  var base=(_coPay==='package'&&_coPkg)?_coPkg.unitPrice:_coSvcPrice;
+  var final=Math.max(0,base-disc);
+  var el=document.getElementById('coAmount');if(el)el.textContent=fmtNT(final);
+  var bd=document.getElementById('coBreakdown');
+  if(bd){
+    bd.style.display=disc>0?'block':'none';
+    if(disc>0){
+      var op=document.getElementById('coOrigPrice');var da=document.getElementById('coDiscAmt');var fa=document.getElementById('coFinalBreak');
+      if(op)op.textContent=fmtNT(base);if(da)da.textContent='- '+fmtNT(disc);if(fa)fa.textContent=fmtNT(final);
+    }
+  }
+}
 function checkoutModal(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
   var sv=svcOf(b.svc),c=tColor(b.t);_coPay='cash';_coSvcPrice=sv.price;
@@ -1041,6 +1067,18 @@ function checkoutModal(id){
     '<div class="field"><label>付款方式</label><div class="pay-pills" id="coPay"><button class="pay-pill sel" data-p="cash" onclick="setCoPay(\'cash\')">現金</button><button class="pay-pill" data-p="transfer" onclick="setCoPay(\'transfer\')">匯款</button><button class="pay-pill" data-p="card" onclick="setCoPay(\'card\')">刷卡</button>'+pkgPill+'</div></div>'+
     '<div id="coPkgNote" style="display:none;background:var(--mint-l);border:1px solid var(--mint);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--mint-d)"></div>'+
     '<div id="coTransfer" style="display:none;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:10px;padding:12px 14px;margin-bottom:10px"><div class="grid2"><div class="field" style="margin-bottom:0"><label>匯款後五碼 *</label><input id="co-last5" maxlength="5" inputmode="numeric" placeholder="例：12345" style="font-family:monospace;letter-spacing:2px" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="field" style="margin-bottom:0"><label>匯款日期 *</label><input id="co-tdate" type="date" style="width:150px;max-width:100%"></div></div></div>'+
+    '<div style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px">'+
+    '<div style="font-size:11px;font-weight:700;color:var(--slate);letter-spacing:.5px;margin-bottom:8px">🔒 內部減免（不顯示於收據）</div>'+
+    '<div class="row" style="gap:8px;flex-wrap:wrap">'+
+    '<div class="row" style="gap:5px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">減免 NT$</span>'+
+    '<input id="coDiscount" type="number" min="0" step="50" value="0" style="width:88px;padding:7px 9px;border:1.5px solid var(--mist);border-radius:8px;text-align:right;font-weight:700" oninput="updateCoTotal()"></div>'+
+    '<input id="coDiscountNote" placeholder="原因備註（僅內部可見）" style="flex:1;min-width:120px;padding:7px 10px;border:1.5px solid var(--mist);border-radius:8px">'+
+    '</div>'+
+    '<div id="coBreakdown" style="display:none;margin-top:8px;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:8px;padding:10px 14px">'+
+    '<div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--slate)">原價</span><span id="coOrigPrice"></span></div>'+
+    '<div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:6px;color:var(--danger)"><span>減免</span><span id="coDiscAmt"></span></div>'+
+    '<div class="row" style="justify-content:space-between;font-size:13px;font-weight:700;border-top:1px solid #bcd6e6;padding-top:6px"><span>實收</span><span id="coFinalBreak"></span></div>'+
+    '</div></div>'+
     '<label class="row" style="font-size:13px;gap:8px;margin:10px 0"><input type="checkbox" id="coRc" style="width:auto"> 開立收據</label>'+
     '<div style="font-size:11px;color:var(--slate)">勾選後將自動帶入會員的姓名、出生年月日、身分證字號（課程扣抵不開立單次收據）</div>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="doCheckout('+id+')">確認結帳</button></div>');
@@ -1064,14 +1102,17 @@ function doCheckout(id){
   /* 防止同一筆預約重複結帳，造成重複的消費記錄與營收 */
   if(PAYMENTS.some(function(x){return x.bookingId===b.id;})){showToast('此預約已結帳過，請至消費記錄補印收據');closeModal();return;}
   var sv0=svcOf(b.svc);
+  var disc=Math.max(0,Number((document.getElementById('coDiscount')||{}).value)||0);
+  var discNote=((document.getElementById('coDiscountNote')||{}).value||'').trim();
   /* 使用課程扣抵：扣 1 堂，當次才認列一堂的金額（購買時不計營收，符合每次上課認列） */
   if(_coPay==='package'){
     var pkg=findUsablePkg(b.phone,b.svc);
     if(!pkg){showToast('找不到可使用的課程，請改用其他付款方式');return;}
     pkg.used++;
-    b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';
-    PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkg.unitPrice,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)});
-    closeModal();renderCal();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂');
+    var pkgFinal=Math.max(0,pkg.unitPrice-disc);
+    b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;
+    PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote});
+    closeModal();renderCal();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));
     return;
   }
   if(_coPay==='transfer'){
@@ -1081,7 +1122,8 @@ function doCheckout(id){
     if(!tdate){showToast('請選擇匯款日期');return;}
     b.transferLast5=last5;b.transferDate=tdate;
   }else{b.transferLast5='';b.transferDate='';}
-  b.status='completed';b.pay=_coPay;
+  var finalAmt=Math.max(0,svcOf(b.svc).price-disc);
+  b.status='completed';b.pay=_coPay;b.paidAmount=finalAmt;
   /* 寫入消費記錄 */
   var sv=svcOf(b.svc);
   PAYMENTS.push({
@@ -1092,12 +1134,13 @@ function doCheckout(id){
     t:b.t,
     svc:b.svc,
     svcName:sv.name,
-    amount:sv.price,
+    amount:finalAmt,
     pay:_coPay,
     transferLast5:b.transferLast5||'',
     transferDate:b.transferDate||'',
     date:b.date,
-    paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)
+    paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),
+    discountNote:discNote
   });
   var rc=document.getElementById('coRc').checked;
   var p=getPatient(b.phone)||{};
@@ -1123,19 +1166,18 @@ function buildNameSeal(nm,w,h){
   var n=nm.length;
   /* 字數越多字型越小，維持單行；依長方形寬度自適應 */
   var fs=Math.max(12,Math.min(24,Math.floor((w-16)/(Math.max(n,1)*1.02))));
-  /* 長方形紅框、白底、紅字 */
-  var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.36)+'" text-anchor="middle" fill="#c0392b" '+
+  /* 長方形單層框、白底、#ff3131 */
+  var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.36)+'" text-anchor="middle" fill="#ff3131" '+
     'font-size="'+fs+'" font-weight="900" letter-spacing="2" '+
     'font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';
   return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0">'+
-    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="3" fill="#fff" stroke="#c0392b" stroke-width="2.5"/>'+
-    '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="2" fill="none" stroke="#c0392b" stroke-width="1"/>'+
+    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="3" fill="#fff" stroke="#ff3131" stroke-width="2.5"/>'+
     tx+'</svg>';
 }
 function stampT(tid){
-  if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:96px;height:54px;object-fit:contain">';
+  if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:78px;height:42px;object-fit:contain">';
   var nm=tName(tid).replace('物理治療師','').replace('治療師','').trim()||tid;
-  return buildNameSeal(nm,96,54);
+  return buildNameSeal(nm,78,42);
 }
 function receiptHTML(b,name,dob,idn){
   var sv=svcOf(b.svc);var pay={cash:'現金',transfer:'匯款',card:'刷卡'}[b.pay]||'現金';
@@ -2034,6 +2076,14 @@ function clearStamp(key){
   else STAMPS[key]='';
   go('receipt');showToast('已移除印章');
 }
+function uploadLoginLogo(input){
+  var file=input.files&&input.files[0];if(!file)return;
+  if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}
+  var reader=new FileReader();
+  reader.onload=function(e){LOGIN_LOGO=e.target.result;go('receipt');showToast('登入頁 Logo 已上傳');};
+  reader.readAsDataURL(file);
+}
+function clearLoginLogo(){LOGIN_LOGO='';go('receipt');showToast('已移除登入頁 Logo');}
 function uploadLogo(input){
   var file=input.files&&input.files[0];if(!file)return;
   if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}
@@ -2365,7 +2415,7 @@ function saveAll(){
     PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,
     PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,
     EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,
-    CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO
+    CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO
   };
   fetch(RENDER_URL+'/clinic-data',{
     method:'POST',
@@ -2409,6 +2459,7 @@ function loadFromServer(cb){
     if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);
     if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
     if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;
+    if(s.LOGIN_LOGO)LOGIN_LOGO=s.LOGIN_LOGO;
     SVC_ID=SERVICES.length?Math.max.apply(null,SERVICES.map(function(x){return parseInt(x.id)||100;}))+1:100;
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
