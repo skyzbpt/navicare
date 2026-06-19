@@ -549,16 +549,6 @@ const ROLE_PAGES={
 };
 let currentUser=null;
 
-function onGoogleSignIn(resp){
-  try{
-    var b=resp.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
-    var p=JSON.parse(decodeURIComponent(escape(atob(b))));
-    var cfg=EMAIL_WHITELIST[p.email];
-    if(!cfg){showLoginError('此帳號未獲授權\n'+p.email);return;}
-    currentUser={email:p.email,name:cfg.name||p.name,avatar:p.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
-    go('dashboard');
-  }catch(e){showLoginError('登入失敗，請再試一次');}
-}
 function showLoginError(msg){var el=document.getElementById('loginErr');if(el){el.style.display='block';el.textContent=msg;}else{showToast(msg);}}
 function signOut(){currentUser=null;try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}go('login');}
 function triggerGoogleLogin(){
@@ -758,7 +748,9 @@ function calcRetention(){
 views.dashboard=function(){
   var today=todayStr();
   var done=BOOKINGS.filter(function(b){return b.status==='completed';});
-  var rev=done.reduce(function(a,b){return a+svcOf(b.svc).price;},0);
+  /* 營收／客單價／印花稅一律以消費記錄（實際收款）為準，與消費記錄頁一致 */
+  var rev=PAYMENTS.reduce(function(a,p){return a+(p.amount||0);},0);
+  var stampBase=PAYMENTS.filter(function(p){return p.pay!=='transfer';}).reduce(function(a,p){return a+(p.amount||0);},0);
   var todayBks=BOOKINGS.filter(function(b){return b.date===today;});
   var future=BOOKINGS.filter(function(b){return b.date>today&&b.status==='confirmed';});
   var tCount={};THERAPISTS.forEach(function(t){tCount[t.id]=done.filter(function(b){return b.t===t.id;}).length;});
@@ -767,7 +759,7 @@ views.dashboard=function(){
     return '<div class="bar-row"><div class="bl">'+t.name+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(tCount[t.id]/maxT*100)+'%;background:'+tColor(t.id)+'">'+tCount[t.id]+'</div></div></div>';
   }).join('')||'<div class="empty">尚無治療師</div>';
   var ret=calcRetention();
-  var avg=done.length?Math.round(rev/done.length):0;
+  var avg=PAYMENTS.length?Math.round(rev/PAYMENTS.length):0;
   return shell('dashboard','總覽',
     '<div class="stat-grid">'+
     '<div class="stat-card highlight"><div class="sc-n mint">'+done.length+'</div><div class="sc-l">累計治療人次</div></div>'+
@@ -779,7 +771,7 @@ views.dashboard=function(){
     '<div class="card"><div class="card-head"><h3>重點指標</h3></div><div class="card-body">'+
     '<div class="status-row"><b>90天回流率</b><span class="tag mint">'+ret.rate+'%</span></div>'+
     '<div class="status-row"><b>平均客單價</b><span class="tag mint">'+fmtNT(avg)+'</span></div>'+
-    '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(Math.floor(rev*0.004))+'</span></div>'+
+    '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(Math.floor(stampBase*0.004))+'</span></div>'+
     '</div></div></div>');
 };
 
@@ -842,6 +834,7 @@ views.bookings=function(){
     '<button class="btn gray sm" onclick="calToday()">本週</button>'+
     '<div class="row" id="calPills" style="gap:5px">'+calPills()+'</div>'+
     '<button class="btn sm" onclick="addBkModal()">+ 新增預約</button>'+
+    '<button class="btn ghost sm" onclick="pullSubmissions()">讀取線上送出</button>'+
     '</div>');
 };
 function addBkModal(){
@@ -1036,22 +1029,52 @@ function confirmDelBk(id){
 
 /* 結帳 / 收據 */
 var _coPay='cash';
+var _coPkg=null;
+var _coSvcPrice=0;
 function checkoutModal(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
-  var sv=svcOf(b.svc),c=tColor(b.t);_coPay='cash';
-  var it=INTAKE_DATA[b.phone]||{};
+  var sv=svcOf(b.svc),c=tColor(b.t);_coPay='cash';_coSvcPrice=sv.price;
+  _coPkg=findUsablePkg(b.phone,b.svc);
+  var pkgPill=_coPkg?'<button class="pay-pill" data-p="package" onclick="setCoPay(\'package\')">使用課程（剩 '+(_coPkg.total-_coPkg.used)+' 堂）</button>':'';
   modal('<div class="modal-head" style="background:'+c+'">結帳 - '+esc(b.name)+'<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body">'+
-    '<div style="background:var(--mint-l);border:1.5px solid var(--mint);border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><div style="font-size:13px;color:var(--mint-d)">'+esc(sv.name)+'</div><div style="font-size:11px;color:var(--slate)">'+b.date+' '+b.time+'</div></div><div style="font-size:24px;font-weight:800;color:var(--mint-d)">'+fmtNT(sv.price)+'</div></div>'+
-    '<div class="field"><label>付款方式</label><div class="pay-pills" id="coPay"><button class="pay-pill sel" data-p="cash" onclick="setCoPay(\'cash\')">現金</button><button class="pay-pill" data-p="transfer" onclick="setCoPay(\'transfer\')">匯款</button><button class="pay-pill" data-p="card" onclick="setCoPay(\'card\')">刷卡</button></div></div>'+
+    '<div style="background:var(--mint-l);border:1.5px solid var(--mint);border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><div style="font-size:13px;color:var(--mint-d)">'+esc(sv.name)+'</div><div style="font-size:11px;color:var(--slate)">'+b.date+' '+b.time+'</div></div><div style="font-size:24px;font-weight:800;color:var(--mint-d)" id="coAmount">'+fmtNT(sv.price)+'</div></div>'+
+    '<div class="field"><label>付款方式</label><div class="pay-pills" id="coPay"><button class="pay-pill sel" data-p="cash" onclick="setCoPay(\'cash\')">現金</button><button class="pay-pill" data-p="transfer" onclick="setCoPay(\'transfer\')">匯款</button><button class="pay-pill" data-p="card" onclick="setCoPay(\'card\')">刷卡</button>'+pkgPill+'</div></div>'+
+    '<div id="coPkgNote" style="display:none;background:var(--mint-l);border:1px solid var(--mint);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--mint-d)"></div>'+
     '<div id="coTransfer" style="display:none;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:10px;padding:12px 14px;margin-bottom:10px"><div class="grid2"><div class="field" style="margin-bottom:0"><label>匯款後五碼 *</label><input id="co-last5" maxlength="5" inputmode="numeric" placeholder="例：12345" style="font-family:monospace;letter-spacing:2px" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="field" style="margin-bottom:0"><label>匯款日期 *</label><input id="co-tdate" type="date" style="width:150px;max-width:100%"></div></div></div>'+
     '<label class="row" style="font-size:13px;gap:8px;margin:10px 0"><input type="checkbox" id="coRc" style="width:auto"> 開立收據</label>'+
-    '<div style="font-size:11px;color:var(--slate)">勾選後將自動帶入會員的姓名、出生年月日、身分證字號</div>'+
+    '<div style="font-size:11px;color:var(--slate)">勾選後將自動帶入會員的姓名、出生年月日、身分證字號（課程扣抵不開立單次收據）</div>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="doCheckout('+id+')">確認結帳</button></div>');
 }
-function setCoPay(p){_coPay=p;document.querySelectorAll('#coPay .pay-pill').forEach(function(b){b.classList.toggle('sel',b.dataset.p===p);});var tf=document.getElementById('coTransfer');if(tf)tf.style.display=p==='transfer'?'block':'none';}
+function setCoPay(p){
+  _coPay=p;
+  document.querySelectorAll('#coPay .pay-pill').forEach(function(b){b.classList.toggle('sel',b.dataset.p===p);});
+  var tf=document.getElementById('coTransfer');if(tf)tf.style.display=p==='transfer'?'block':'none';
+  var amt=document.getElementById('coAmount');
+  var note=document.getElementById('coPkgNote');
+  if(p==='package'&&_coPkg){
+    if(amt)amt.textContent=fmtNT(_coPkg.unitPrice);
+    if(note){note.style.display='block';note.textContent='使用「'+_coPkg.name+'」扣 1 堂，扣抵後剩餘 '+(_coPkg.total-_coPkg.used-1)+' 堂；本次認列營收 '+fmtNT(_coPkg.unitPrice)+'。';}
+  }else{
+    if(amt)amt.textContent=fmtNT(_coSvcPrice);
+    if(note)note.style.display='none';
+  }
+}
 function doCheckout(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
+  /* 防止同一筆預約重複結帳，造成重複的消費記錄與營收 */
+  if(PAYMENTS.some(function(x){return x.bookingId===b.id;})){showToast('此預約已結帳過，請至消費記錄補印收據');closeModal();return;}
+  var sv0=svcOf(b.svc);
+  /* 使用課程扣抵：扣 1 堂，當次才認列一堂的金額（購買時不計營收，符合每次上課認列） */
+  if(_coPay==='package'){
+    var pkg=findUsablePkg(b.phone,b.svc);
+    if(!pkg){showToast('找不到可使用的課程，請改用其他付款方式');return;}
+    pkg.used++;
+    b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';
+    PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkg.unitPrice,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)});
+    closeModal();renderCal();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂');
+    return;
+  }
   if(_coPay==='transfer'){
     var last5=(document.getElementById('co-last5').value||'').trim();
     var tdate=document.getElementById('co-tdate').value;
@@ -1213,6 +1236,52 @@ function syncOne(id){
       .catch(function(e){showToast('同步失敗：'+e.message);});
   });
 }
+/* 讀取伺服器上「病患線上送出」的初診表與預約，合併進系統並清除已匯入 */
+function pullSubmissions(){
+  if(!RENDER_URL){showToast('請先設定 RENDER_URL');return;}
+  showToast('讀取線上送出中…');
+  fetch(RENDER_URL+'/pending-submissions').then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(data){
+    var bks=(data&&data.bookings)||[];
+    var ins=(data&&data.intakes)||[];
+    if(!bks.length&&!ins.length){showToast('目前沒有待處理的線上送出');return;}
+    var ackIds=[],newBk=0,newIntake=0,newPt=0;
+    /* 初診表（病患手機填的，內容自足） */
+    ins.forEach(function(it){
+      var d=it.data||{};ackIds.push(it.id);
+      if(!d.phone)return;
+      INTAKE_DATA[d.phone]=d;
+      var p=getPatient(d.phone);
+      if(!p){p={phone:d.phone,line:false,lineId:'',note:''};PATIENTS.push(p);newPt++;}
+      p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;
+      newIntake++;
+    });
+    /* 線上預約 */
+    bks.forEach(function(bk){
+      var d=bk.data||{};ackIds.push(bk.id);
+      if(!d.phone||!d.date||!d.time)return;
+      var hm=String(d.time).split(':');
+      var startMin=Number(hm[0])*60+Number(hm[1]||0);
+      BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:d.t||(THERAPISTS[0]&&THERAPISTS[0].id)||'Sky',svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});
+      if(!getPatient(d.phone)){PATIENTS.push({phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});newPt++;}
+      newBk++;
+    });
+    var parts=[];
+    if(newBk)parts.push('預約 '+newBk+' 筆');
+    if(newIntake)parts.push('初診表 '+newIntake+' 份');
+    if(newPt)parts.push('新增病患 '+newPt+' 位');
+    showToast(parts.length?'已匯入：'+parts.join('、'):'沒有可匯入的資料');
+    go('bookings');
+    /* 通知伺服器清除已匯入的，避免下次重複 */
+    if(ackIds.length){
+      fetch(RENDER_URL+'/ack-submissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ackIds})}).then(function(r){if(!r.ok)showToast('已匯入，但伺服器清除失敗，下次可能重複讀取');}).catch(function(){showToast('已匯入，但伺服器清除失敗，下次可能重複讀取');});
+    }
+  }).catch(function(e){
+    showToast('讀取失敗：'+e.message);
+  });
+}
 /* 刪除 Google 行事曆上的對應事件 */
 function gcalDelete(eventId,cb){
   if(!eventId){if(cb)cb();return;}
@@ -1225,20 +1294,6 @@ function gcalDelete(eventId,cb){
       else{res.json().then(function(d){showToast('行事曆移除失敗：'+((d.error&&d.error.message)||('HTTP '+res.status)));}).catch(function(){showToast('行事曆移除失敗 HTTP '+res.status);});}
       if(cb)cb();
     }).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});
-  });
-}
-function syncAllGCal(){
-  ensureGCal(function(){
-    var list=BOOKINGS.filter(function(b){return b.status!=='cancelled';});
-    if(!list.length){showToast('目前沒有可同步的預約');return;}
-    showToast('同步中…');
-    Promise.all(list.map(function(b){return gcalUpsert(b).then(function(){return true;}).catch(function(e){b._syncErr=e.message;return false;});}))
-      .then(function(res){
-        var ok=res.filter(function(x){return x;}).length;
-        var firstErr=list.find(function(b){return b._syncErr;});
-        if(ok===list.length)showToast('已同步全部 '+ok+' 筆 ✓');
-        else showToast('同步 '+ok+'/'+list.length+' 筆，失敗原因：'+(firstErr?firstErr._syncErr:'未知'));
-      });
   });
 }
 /* 讀取使用者的 Google 行事曆清單 */
@@ -1328,16 +1383,26 @@ function ptTab(btn,name){btn.parentNode.querySelectorAll('.edit-tab').forEach(fu
 function ptPayPanel(ph){
   var list=PAYMENTS.filter(function(r){return r.phone===ph;}).sort(function(a,b){return (b.paidAt||'').localeCompare(a.paidAt||'');});
   var total=list.reduce(function(a,r){return a+r.amount;},0);
-  if(!list.length)return '<div class="empty">尚無消費記錄</div>';
-  var rows=list.map(function(r){return '<tr><td>'+esc(r.date)+'</td><td>'+esc(r.svcName)+'</td><td><span class="tag '+(r.pay==='transfer'?'amber':r.pay==='card'?'mint':'gray')+'">'+(PAY_LABEL[r.pay]||r.pay)+'</span></td><td class="num" style="font-weight:700">'+fmtNT(r.amount)+'</td></tr>';}).join('');
-  return '<div class="banner info"><span>i</span><div>累計消費 '+list.length+' 筆，總金額 '+fmtNT(total)+'</div></div><table><thead><tr><th>日期</th><th>服務</th><th>付款</th><th>金額</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  var payHtml=list.length?('<div class="banner info"><span>i</span><div>累計消費 '+list.length+' 筆，總金額 '+fmtNT(total)+'</div></div><table><thead><tr><th>日期</th><th>服務</th><th>付款</th><th>金額</th></tr></thead><tbody>'+list.map(function(r){return '<tr><td>'+esc(r.date)+'</td><td>'+esc(r.svcName)+'</td><td><span class="tag '+(r.pay==='transfer'?'amber':r.pay==='card'||r.pay==='package'?'mint':'gray')+'">'+(PAY_LABEL[r.pay]||r.pay)+'</span></td><td class="num" style="font-weight:700">'+fmtNT(r.amount)+'</td></tr>';}).join('')+'</tbody></table>'):'<div class="empty">尚無消費記錄</div>';
+  return pkgPanelHTML(ph)+'<div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">消費記錄</div>'+payHtml;
 }
 function savePt(ph){
   var p=getPatient(ph);if(!p)return;
+  var oldPhone=p.phone;
   var newPhone=document.getElementById('pe-phone').value.trim();
-  if(newPhone&&newPhone!==p.phone){
+  if(newPhone&&newPhone!==oldPhone){
     var dup=PATIENTS.find(function(x){return x!==p&&x.phone===newPhone;});
     if(dup){showToast('此電話已被其他病患使用');return;}
+    /* 電話是病患主鍵，變更時一併搬移所有關聯資料，避免預約／病歷／消費紀錄遺失 */
+    if(oldPhone){
+      BOOKINGS.forEach(function(b){if(b.phone===oldPhone)b.phone=newPhone;});
+      PAYMENTS.forEach(function(r){if(r.phone===oldPhone)r.phone=newPhone;});
+      SOAP_NOTES.forEach(function(n){if(n.phone===oldPhone)n.phone=newPhone;});
+      Object.keys(EDU_SENT).forEach(function(eid){EDU_SENT[eid].forEach(function(r){if(r.phone===oldPhone)r.phone=newPhone;});});
+      if(INTAKE_DATA[oldPhone]){INTAKE_DATA[newPhone]=INTAKE_DATA[oldPhone];delete INTAKE_DATA[oldPhone];}
+      if(PT_TAG_DATA[oldPhone]){PT_TAG_DATA[newPhone]=PT_TAG_DATA[oldPhone];delete PT_TAG_DATA[oldPhone];}
+      if(PT_PACKAGES[oldPhone]){PT_PACKAGES[newPhone]=PT_PACKAGES[oldPhone];delete PT_PACKAGES[oldPhone];}
+    }
     p.phone=newPhone;
   }
   p.name=document.getElementById('pe-name').value.trim()||p.name;
@@ -1474,31 +1539,31 @@ function submitSoap(){
 /* ============ 營運分析 ============ */
 views.analytics=function(){
   var done=BOOKINGS.filter(function(b){return b.status==='completed';});
-  var rev=done.reduce(function(a,b){return a+svcOf(b.svc).price;},0);
-  var stats={};SERVICES.forEach(function(s){stats[s.id]={name:s.name,count:0,rev:0};});
-  done.forEach(function(b){if(stats[b.svc]){stats[b.svc].count++;stats[b.svc].rev+=svcOf(b.svc).price;}});
-  var arr=Object.keys(stats).map(function(k){return stats[k];}).sort(function(a,b){return b.count-a.count;});
+  /* 營收一律以消費記錄（實際收款）為準，避免與消費記錄頁脫鉤、或被日後改價影響 */
+  var rev=PAYMENTS.reduce(function(a,p){return a+(p.amount||0);},0);
+  var stats={};
+  PAYMENTS.forEach(function(p){var key=p.svc||p.svcName||'-';if(!stats[key])stats[key]={name:p.svcName||svcOf(p.svc).name,count:0,rev:0};stats[key].count++;stats[key].rev+=(p.amount||0);});
+  var arr=Object.keys(stats).map(function(k){return stats[k];}).sort(function(a,b){return b.rev-a.rev;});
   var maxC=Math.max.apply(null,arr.map(function(s){return s.count;}).concat([1]));
-  var svcRows=arr.map(function(s){return '<div class="bar-row"><div class="bl">'+s.name+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(s.count/maxC*100)+'%;background:var(--navy)">'+s.count+'</div></div><div class="bv">'+fmtNT(s.rev)+'</div></div>';}).join('');
-  var tRows=THERAPISTS.map(function(t){var bks=done.filter(function(b){return b.t===t.id;});return '<tr><td class="t-name">'+t.name+'</td><td>'+bks.length+' 次</td><td class="num">'+fmtNT(bks.reduce(function(a,b){return a+svcOf(b.svc).price;},0))+'</td></tr>';}).join('');
-  var avg=done.length?Math.round(rev/done.length):0;
+  var svcRows=arr.map(function(s){return '<div class="bar-row"><div class="bl">'+esc(s.name)+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(s.count/maxC*100)+'%;background:var(--navy)">'+s.count+'</div></div><div class="bv">'+fmtNT(s.rev)+'</div></div>';}).join('');
+  var tRows=THERAPISTS.map(function(t){var bks=done.filter(function(b){return b.t===t.id;});var trev=PAYMENTS.filter(function(p){return p.t===t.id;}).reduce(function(a,p){return a+(p.amount||0);},0);return '<tr><td class="t-name">'+t.name+'</td><td>'+bks.length+' 次</td><td class="num">'+fmtNT(trev)+'</td></tr>';}).join('');
+  var avg=PAYMENTS.length?Math.round(rev/PAYMENTS.length):0;
   var rate=BOOKINGS.length?Math.round(done.length/BOOKINGS.length*100):0;
   return shell('analytics','營運分析',
     '<div class="stat-grid"><div class="stat-card"><div class="sc-n">'+done.length+'</div><div class="sc-l">完成人次</div></div><div class="stat-card"><div class="sc-n mint">'+fmtNT(rev)+'</div><div class="sc-l">總營收</div></div><div class="stat-card"><div class="sc-n">'+fmtNT(avg)+'</div><div class="sc-l">平均客單價</div></div><div class="stat-card"><div class="sc-n">'+rate+'%</div><div class="sc-l">完診率</div></div></div>'+
-    '<div class="grid2"><div class="card"><div class="card-head"><h3>服務人次 / 營收</h3></div><div class="card-body">'+(svcRows||'<div class="empty">尚無資料</div>')+'</div></div>'+
-    '<div class="card"><div class="card-head"><h3>治療師人次</h3></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>人次</th><th>營收</th></tr></thead><tbody>'+tRows+'</tbody></table></div></div></div>');
+    '<div class="grid2"><div class="card"><div class="card-head"><h3>服務營收 / 筆數</h3></div><div class="card-body">'+(svcRows||'<div class="empty">尚無資料</div>')+'</div></div>'+
+    '<div class="card"><div class="card-head"><h3>治療師營收</h3></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>完成次數</th><th>營收</th></tr></thead><tbody>'+tRows+'</tbody></table></div></div></div>');
 };
 
 /* ============ 消費記錄 ============ */
-var _payFilter={pay:'all',q:''};
+var _payFilter={pay:'all'};
 var PAY_LABEL={cash:'現金',transfer:'匯款',card:'刷卡'};
 function payFiltered(){
   return PAYMENTS.filter(function(r){
-    if(_payFilter.pay!=='all'&&r.pay!==_payFilter.pay)return false;
-    if(_payFilter.q){var q=_payFilter.q.toLowerCase();if((r.name||'').toLowerCase().indexOf(q)<0&&(r.phone||'').toLowerCase().indexOf(q)<0)return false;}
-    return true;
+    return _payFilter.pay==='all'||r.pay===_payFilter.pay;
   }).sort(function(a,b){return (b.paidAt||'').localeCompare(a.paidAt||'');});
 }
+function filterPayRows(q){q=(q||'').toLowerCase();document.querySelectorAll('#payBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 views.payments=function(){
   var list=payFiltered();
   var total=list.reduce(function(a,r){return a+r.amount;},0);
@@ -1506,13 +1571,14 @@ views.payments=function(){
   list.forEach(function(r){byPay[r.pay]=(byPay[r.pay]||0)+r.amount;});
   var rows=list.map(function(r){
     var pinfo=r.pay==='transfer'&&r.transferLast5?'<div class="t-sub">末五碼 '+esc(r.transferLast5)+(r.transferDate?' / '+esc(r.transferDate):'')+'</div>':'';
+    var rcBtn=r.pay==='package'?'':'<button class="btn sm ghost" onclick="reprintReceipt('+r.bookingId+')">收據</button>';
     return '<tr><td><div class="t-name">'+esc(r.name)+'</div><div class="t-sub">'+esc(r.phone)+'</div></td>'+
       '<td>'+esc(r.svcName)+'</td>'+
       '<td>'+esc(tName(r.t))+'</td>'+
-      '<td><span class="tag '+(r.pay==='transfer'?'amber':r.pay==='card'?'mint':'gray')+'">'+(PAY_LABEL[r.pay]||r.pay)+'</span>'+pinfo+'</td>'+
+      '<td><span class="tag '+(r.pay==='transfer'?'amber':r.pay==='card'||r.pay==='package'?'mint':'gray')+'">'+(PAY_LABEL[r.pay]||r.pay)+'</span>'+pinfo+'</td>'+
       '<td class="num" style="font-weight:700">'+fmtNT(r.amount)+'</td>'+
       '<td class="t-sub">'+esc(r.paidAt)+'</td>'+
-      '<td><button class="btn sm ghost" onclick="reprintReceipt('+r.bookingId+')">收據</button></td></tr>';
+      '<td class="row" style="gap:5px">'+rcBtn+'<button class="btn sm danger" onclick="voidPayment('+r.id+')">作廢</button></td></tr>';
   }).join('');
   var pills=[['all','全部'],['cash','現金'],['transfer','匯款'],['card','刷卡']].map(function(p){
     return '<button class="pay-pill'+(_payFilter.pay===p[0]?' sel':'')+'" onclick="setPayFilter(\''+p[0]+'\')">'+p[1]+'</button>';
@@ -1522,17 +1588,32 @@ views.payments=function(){
     '<div class="stat-card"><div class="sc-n">'+list.length+'</div><div class="sc-l">交易筆數</div></div>'+
     '<div class="stat-card"><div class="sc-n">'+fmtNT(byPay.cash)+'</div><div class="sc-l">現金</div></div>'+
     '<div class="stat-card"><div class="sc-n">'+fmtNT(byPay.transfer+byPay.card)+'</div><div class="sc-l">匯款＋刷卡</div></div></div>'+
-    '<div class="card"><div class="card-head"><div class="row" style="gap:6px">'+pills+'</div><div class="search-wrap"><input id="payq" value="'+esc(_payFilter.q)+'" placeholder="搜尋姓名或電話" oninput="setPayQ(this.value)"><button class="s-clear" onclick="setPayQ(\'\')">&times;</button></div></div>'+
-    '<div class="card-body flush"><table><thead><tr><th>病患</th><th>服務</th><th>治療師</th><th>付款方式</th><th>金額</th><th>結帳時間</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+(list.length?'':'<div class="empty">尚無消費記錄，結帳完成後會自動產生。</div>')+'</div></div>');
+    '<div class="card"><div class="card-head"><div class="row" style="gap:6px">'+pills+'</div><div class="search-wrap"><input id="payq" placeholder="搜尋姓名或電話" oninput="filterPayRows(this.value)"><button class="s-clear" onclick="document.getElementById(\'payq\').value=\'\';filterPayRows(\'\')">&times;</button></div></div>'+
+    '<div class="card-body flush"><table><thead><tr><th>病患</th><th>服務</th><th>治療師</th><th>付款方式</th><th>金額</th><th>結帳時間</th><th></th></tr></thead><tbody id="payBody">'+rows+'</tbody></table>'+(list.length?'':'<div class="empty">尚無消費記錄，結帳完成後會自動產生。</div>')+'</div></div>');
 };
 function setPayFilter(p){_payFilter.pay=p;go('payments');}
-function setPayQ(v){_payFilter.q=v;var list=payFiltered();go('payments');var el=document.getElementById('payq');if(el){el.focus();el.value=_payFilter.q;}}
 function reprintReceipt(bookingId){
   var b=BOOKINGS.find(function(x){return x.id===bookingId;});
   var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});
   if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate};else{showToast('找不到記錄');return;}}
   var p=getPatient(b.phone)||{};
   showReceipt(b,b.name,p.dob||'',p.idNum||'');
+}
+function voidPayment(pid){
+  var r=PAYMENTS.find(function(x){return x.id===pid;});if(!r)return;
+  modal('<div class="modal-head" style="background:var(--danger)">作廢消費記錄<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px;line-height:1.9">確定作廢這筆收款？<br><b>'+esc(r.name)+'</b>　'+esc(r.svcName)+'　'+fmtNT(r.amount)+'<br><span style="font-size:12px;color:var(--slate)">作廢後此筆將自營收與印花稅中扣除；若對應預約仍存在，會還原為「已確認」以便重新結帳。</span></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmVoidPayment('+pid+')">確定作廢</button></div>');
+}
+function confirmVoidPayment(pid){
+  var i=PAYMENTS.findIndex(function(x){return x.id===pid;});
+  if(i>-1){
+    var r=PAYMENTS[i];
+    var b=BOOKINGS.find(function(x){return x.id===r.bookingId;});
+    if(b&&b.status==='completed'){b.status='confirmed';b.transferLast5='';b.transferDate='';}
+    /* 課程扣抵作廢時，把該堂數退回課程 */
+    if(r.pay==='package'){var pk=getPkgs(r.phone).find(function(x){return x.id===r.pkgId;});if(pk&&pk.used>0)pk.used--;}
+    PAYMENTS.splice(i,1);
+  }
+  closeModal();go('payments');showToast('已作廢，營收已同步更新');
 }
 
 /* ============ 員工薪資 ============ */
@@ -1564,13 +1645,14 @@ function savePayroll(tid){
 
 /* ============ 印花稅 ============ */
 views.stamptax=function(){
-  var taxable=BOOKINGS.filter(function(b){return b.status==='completed'&&b.pay!=='transfer';});
-  var total=Math.floor(taxable.reduce(function(a,b){return a+svcOf(b.svc).price;},0)*0.004);
-  var rows=taxable.map(function(b){return '<tr><td class="t-name">'+esc(b.name)+'</td><td>'+b.date+'</td><td>'+esc(svcOf(b.svc).name)+'</td><td class="num">'+fmtNT(svcOf(b.svc).price)+'</td><td class="num">'+fmtNT(Math.floor(svcOf(b.svc).price*0.004))+'</td></tr>';}).join('');
+  /* 以消費記錄（實際收款）為準，排除匯款 */
+  var taxable=PAYMENTS.filter(function(p){return p.pay!=='transfer';});
+  var total=Math.floor(taxable.reduce(function(a,p){return a+(p.amount||0);},0)*0.004);
+  var rows=taxable.map(function(p){return '<tr><td class="t-name">'+esc(p.name)+'</td><td>'+esc(p.date)+'</td><td>'+esc(p.svcName)+'</td><td class="num">'+fmtNT(p.amount)+'</td><td class="num">'+fmtNT(Math.floor((p.amount||0)*0.004))+'</td></tr>';}).join('');
   return shell('stamptax','印花稅',
     '<div class="stat-grid"><div class="stat-card"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">應納印花稅</div></div><div class="stat-card"><div class="sc-n">'+taxable.length+'</div><div class="sc-l">應稅筆數</div></div></div>'+
     '<div class="card"><div class="card-body flush"><table><thead><tr><th>個案</th><th>日期</th><th>服務</th><th>金額</th><th>稅額</th></tr></thead><tbody>'+rows+'</tbody></table>'+(taxable.length?'':'<div class="empty">尚無應稅資料</div>')+'</div></div>'+
-    '<div class="banner info"><span>i</span><div>稅額以收款金額 0.4% 計（匯款不計）。</div></div>');
+    '<div class="banner info"><span>i</span><div>稅額以實際收款金額 0.4% 計（匯款不計），資料來源為消費記錄。</div></div>');
 };
 
 /* ============ 客戶回流 ============ */
@@ -1733,7 +1815,7 @@ function isWorkingSlot(tid,ds,m){
   if(isLeaveDay(tid,ds))return false;
   var wd=new Date(ds+'T00:00:00').getDay();
   var sh=(t.week&&t.week[wd])||[];
-  return sh.some(function(s){var st=hmToMin(s.start),en=hmToMin(s.end);return st<m+60&&en>m;});
+  return sh.some(function(s){var st=hmToMin(s.start),en=hmToMin(s.end);return st<m+15&&en>m;});
 }
 /* 檢查指定時間（含整段服務時長）是否落在治療師上班時段內 */
 function isWithinShift(tid,ds,startMin,durMin){
@@ -1783,6 +1865,35 @@ views.schedule=function(){
     '</div></div>',
     '<div class="row" style="gap:5px">'+pills+'</div>');
 };
+
+/* ============ 病患課程（堂數）============ */
+var PT_PACKAGES={};
+var PT_PKG_ID=5000;
+if(typeof PAY_LABEL!=='undefined')PAY_LABEL.package='課程扣抵';
+function getPkgs(ph){return PT_PACKAGES[ph]||(PT_PACKAGES[ph]=[]);}
+function findUsablePkg(ph,svc){return getPkgs(ph).find(function(p){return p.svc===svc&&(p.total-p.used)>0;})||null;}
+function pkgPanelHTML(ph){
+  var list=getPkgs(ph);
+  var rows=list.length?list.map(function(p){
+    var left=p.total-p.used;
+    return '<div class="row" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><div><div style="font-weight:700;font-size:13px">'+esc(p.name)+'</div><div class="t-sub">'+esc(svcOf(p.svc).name)+'　每堂認列 '+fmtNT(p.unitPrice)+'</div></div><span class="tag '+(left>0?'mint':'gray')+'">剩 '+left+' / '+p.total+' 堂</span></div>';
+  }).join(''):'<div class="empty" style="padding:18px">尚無購買課程</div>';
+  return '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div class="sec-label" style="margin:0">課程堂數</div><button class="btn sm" onclick="buyPkgModal(\''+ph+'\')">購買課程</button></div>'+rows;
+}
+function buyPkgModal(ph){
+  var p=getPatient(ph);if(!p)return;
+  if(!PACKAGES.length){showToast('請先到「課程設定」建立課程方案');return;}
+  var opts=PACKAGES.map(function(k){return '<option value="'+k.id+'">'+esc(k.name)+'（'+esc(svcOf(k.svc).name)+' '+k.sessions+'堂 / '+fmtNT(k.price)+'）</option>';}).join('');
+  modal('<div class="modal-head" style="background:var(--navy)">購買課程 - '+esc(p.name)+'<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>選擇課程方案</label><select id="bp-pkg">'+opts+'</select></div><div class="banner info"><span>i</span><div>採每次上課認列一堂：購買當下不計營收，之後每次結帳選「使用課程」扣 1 堂、當次才認列一堂的金額。</div></div></div><div class="modal-foot"><button class="btn gray" onclick="ptDetail(\''+ph+'\')">返回</button><button class="btn" onclick="confirmBuyPkg(\''+ph+'\')">確認購買</button></div>');
+}
+function confirmBuyPkg(ph){
+  var p=getPatient(ph);if(!p)return;
+  var k=PACKAGES.find(function(x){return String(x.id)===String(document.getElementById('bp-pkg').value);});
+  if(!k){showToast('請選擇課程');return;}
+  getPkgs(ph).push({id:++PT_PKG_ID,pkgId:k.id,name:k.name,svc:k.svc,total:k.sessions,used:0,unitPrice:Math.round(k.price/k.sessions),purchasedAt:todayStr()});
+  showToast('已購買「'+k.name+'」'+k.sessions+' 堂');
+  ptDetail(ph);
+}
 
 /* ============ 課程設定 ============ */
 views.packages=function(){
@@ -1878,6 +1989,15 @@ views.clinic=function(){
   var sRows=SERVICES.map(function(s){return '<tr><td class="t-name">'+esc(s.name)+'</td><td>'+s.dur+' 分</td><td class="num">'+fmtNT(s.price)+'</td><td class="t-sub">'+esc(s.desc)+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="editSvcModal(\''+s.id+'\')">編輯</button><button class="btn sm danger" onclick="delSvc(\''+s.id+'\')">刪除</button></td></tr>';}).join('');
   return shell('clinic','診所管理',
     '<div class="card"><div class="card-head"><h3>診所資訊</h3></div><div class="card-body"><div class="grid2">'+ciH+'</div><button class="btn" onclick="saveClinic()">儲存診所資訊</button></div></div>'+
+    '<div class="card"><div class="card-head"><h3>Google 行事曆同步</h3></div><div class="card-body">'+
+    '<div class="banner info"><span>i</span><div>預約的新增、修改、取消會自動同步到這裡選定的 Google 行事曆。預設為登入帳號的主行事曆（primary）。</div></div>'+
+    '<div class="field"><label>行事曆 ID</label><input id="ci-calendarId" value="'+esc(CLINIC_INFO.calendarId||'primary')+'" style="font-family:monospace"></div>'+
+    '<div class="row" style="gap:8px"><button class="btn" onclick="saveCalendarId()">儲存行事曆 ID</button><button class="btn ghost" onclick="pickGCalendar()">從清單選擇</button><button class="btn gray" onclick="testGCalConnection()">測試連線</button></div>'+
+    '</div></div>'+
+    '<div class="card"><div class="card-head"><h3>線上預約設定</h3></div><div class="card-body">'+
+    '<div class="banner info"><span>i</span><div>讓病患在自己手機上的線上預約頁能看到正確的服務與治療師：每次調整服務項目、治療師或班表後，按一次「發布」把目前設定同步到線上預約（不含薪資）。</div></div>'+
+    '<button class="btn" onclick="publishCatalog()">發布服務／治療師到線上預約</button>'+
+    '</div></div>'+
     '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div></div>'+
     '<div class="card"><div class="card-head"><h3>服務項目</h3><button class="btn sm" onclick="addSvcModal()">+ 新增服務</button></div><div class="card-body flush"><table><thead><tr><th>項目</th><th>時長</th><th>費用</th><th>說明</th><th></th></tr></thead><tbody>'+sRows+'</tbody></table>'+(SERVICES.length?'':'<div class="empty">尚無服務項目，點右上角「新增服務」建立。</div>')+'</div></div>');
 };
@@ -1899,71 +2019,11 @@ function chooseGCal(id){CLINIC_INFO.calendarId=id;closeModal();go('clinic');show
 
 /* ── 員工帳號與權限 ── */
 var ROLE_LABELS={admin:'管理員',therapist:'治療師'};
-function staffRows(){
-  var emails=Object.keys(EMAIL_WHITELIST);
-  if(!emails.length)return '<tr><td colspan="4" class="empty">尚無員工帳號</td></tr>';
-  return emails.map(function(em){
-    var s=EMAIL_WHITELIST[em];
-    var lbl=ROLE_LABELS[s.role]||s.role;
-    var me=currentUser&&currentUser.email===em;
-    return '<tr><td><div class="t-name">'+esc(s.name)+(me?' <span class="tag mint">目前登入</span>':'')+'</div></td>'+
-      '<td style="font-family:monospace;font-size:12px">'+esc(em)+'</td>'+
-      '<td><span class="tag '+(s.role==='admin'?'amber':'mint')+'">'+lbl+'</span>'+(s.therapistId?'<span class="t-sub" style="margin-left:6px">'+esc(tName(s.therapistId))+'</span>':'')+'</td>'+
-      '<td class="row" style="gap:5px"><button class="btn sm ghost" onclick="editStaffModal(\''+esc(em)+'\')">編輯</button><button class="btn sm danger" onclick="delStaff(\''+esc(em)+'\')">刪除</button></td></tr>';
-  }).join('');
-}
 function staffRoleOptions(sel){
   return [['admin','管理員（所有頁面）'],['therapist','治療師（看診相關）']].map(function(r){
     return '<option value="'+r[0]+'"'+(r[0]===sel?' selected':'')+'>'+r[1]+'</option>';
   }).join('');
 }
-function staffTherapistOptions(sel){
-  return '<option value="">（不對應治療師）</option>'+THERAPISTS.map(function(t){return '<option value="'+t.id+'"'+(t.id===sel?' selected':'')+'>'+esc(t.name)+'</option>';}).join('');
-}
-function addStaffModal(){
-  modal('<div class="modal-head" style="background:var(--navy)">新增員工帳號<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+
-    '<div class="field"><label>顯示名稱</label><input id="st-name" placeholder="例：櫃檯小美"></div>'+
-    '<div class="field"><label>Gmail 帳號</label><input id="st-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div>'+
-    '<div class="field"><label>權限角色</label><select id="st-role">'+staffRoleOptions('therapist')+'</select></div>'+
-    '<div class="field"><label>對應治療師（選填）</label><select id="st-tid">'+staffTherapistOptions('')+'</select><div style="font-size:11px;color:var(--slate);margin-top:5px">治療師角色可對應到名單中的某位治療師</div></div>'+
-    '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn" onclick="submitStaff()">新增</button></div>');
-}
-function submitStaff(){
-  var name=document.getElementById('st-name').value.trim();
-  var email=document.getElementById('st-email').value.trim().toLowerCase();
-  if(!name){showToast('請填寫名稱');return;}
-  if(!email||email.indexOf('@')<1){showToast('請填寫有效的 Gmail');return;}
-  if(EMAIL_WHITELIST[email]){showToast('此帳號已存在');return;}
-  EMAIL_WHITELIST[email]={name:name,therapistId:document.getElementById('st-tid').value||null,role:document.getElementById('st-role').value};
-  closeModal();go('clinic');showToast('員工帳號已新增');
-}
-function editStaffModal(email){
-  var s=EMAIL_WHITELIST[email];if(!s)return;
-  modal('<div class="modal-head" style="background:var(--navy)">編輯員工帳號<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+
-    '<div class="field"><label>顯示名稱</label><input id="st-name" value="'+esc(s.name)+'"></div>'+
-    '<div class="field"><label>Gmail 帳號</label><input value="'+esc(email)+'" disabled style="font-family:monospace;background:var(--bg)"></div>'+
-    '<div class="field"><label>權限角色</label><select id="st-role">'+staffRoleOptions(s.role)+'</select></div>'+
-    '<div class="field"><label>對應治療師（選填）</label><select id="st-tid">'+staffTherapistOptions(s.therapistId)+'</select></div>'+
-    '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn" onclick="saveStaff(\''+esc(email)+'\')">儲存</button></div>');
-}
-function saveStaff(email){
-  var s=EMAIL_WHITELIST[email];if(!s)return;
-  var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});
-  var newRole=document.getElementById('st-role').value;
-  if(s.role==='admin'&&newRole!=='admin'&&admins.length<=1){showToast('至少需保留一位管理員');return;}
-  s.name=document.getElementById('st-name').value.trim()||s.name;
-  s.role=newRole;
-  s.therapistId=document.getElementById('st-tid').value||null;
-  closeModal();go('clinic');showToast('已儲存');
-}
-function delStaff(email){
-  var s=EMAIL_WHITELIST[email];if(!s)return;
-  var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});
-  if(s.role==='admin'&&admins.length<=1){showToast('至少需保留一位管理員，無法刪除');return;}
-  modal('<div class="modal-head" style="background:var(--danger)">刪除員工帳號<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px;line-height:1.8">確定刪除帳號 <b>'+esc(email)+'</b>？<br>刪除後此帳號將<b>無法登入</b>系統。</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn danger" onclick="confirmDelStaff(\''+esc(email)+'\')">確定刪除</button></div>');
-}
-function confirmDelStaff(email){delete EMAIL_WHITELIST[email];closeModal();go('clinic');showToast('已刪除員工帳號');}
-
 /* ── 治療師對應帳號管理 ── */
 function tAccountModal(tid){
   var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;
@@ -2046,6 +2106,43 @@ function delSvc(id){
 function confirmDelSvc(id){var i=SERVICES.findIndex(function(x){return x.id===id;});if(i>-1)SERVICES.splice(i,1);closeModal();go('clinic');showToast('已刪除');}
 
 /* ============ 客戶線上預約 ============ */
+/* 病患自己的裝置送出的初診／預約，POST 回 RENDER 伺服器；best-effort，不阻擋畫面 */
+function submitToServer(type,data){
+  if(!RENDER_URL)return Promise.resolve(false);
+  return fetch(RENDER_URL+'/submit-'+type,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.ok;}).catch(function(){return false;});
+}
+var _catalogLoaded=false;
+/* 病患裝置：套用伺服器發布的公開服務／治療師清單 */
+function applyCatalog(cat){
+  if(!cat)return;
+  if(Array.isArray(cat.services)){SERVICES.length=0;cat.services.forEach(function(s){SERVICES.push(s);});}
+  if(Array.isArray(cat.therapists)&&cat.therapists.length){
+    THERAPISTS=cat.therapists.map(function(t){return {id:t.id,name:t.name,title:t.title||'物理治療師',base:0,rate:0,workDays:[],week:t.week||{},leaves:t.leaves||[]};});
+    THERAPISTS.forEach(function(t){TN[t.id]=t.name;});
+    cat.therapists.forEach(function(t){if(t.color)TC[t.id]=t.color;});
+  }
+}
+/* 未登入（病患手機）開預約頁時，先跟伺服器要一份清單再重繪 */
+function ensureCatalogForPublic(view){
+  if(currentUser||_catalogLoaded||!RENDER_URL)return;
+  _catalogLoaded=true;
+  fetch(RENDER_URL+'/catalog').then(function(r){return r.json();}).then(function(cat){
+    applyCatalog(cat);
+    if(typeof views[view]==='function')document.getElementById('frame').innerHTML=views[view]();
+  }).catch(function(){});
+}
+/* 診所端：把目前服務與治療師（不含薪資）發布到線上預約 */
+function publishCatalog(){
+  if(!RENDER_URL){showToast('請先設定 RENDER_URL');return;}
+  var cat={
+    services:SERVICES.map(function(s){return {id:s.id,name:s.name,dur:s.dur,price:s.price,desc:s.desc||''};}),
+    therapists:THERAPISTS.map(function(t){return {id:t.id,name:t.name,title:t.title||'',color:tColor(t.id),week:t.week||{},leaves:t.leaves||[]};})
+  };
+  showToast('發布中…');
+  fetch(RENDER_URL+'/publish-catalog',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cat)}).then(function(r){
+    if(r.ok)showToast('已發布到線上預約 ✓');else showToast('發布失敗：HTTP '+r.status);
+  }).catch(function(e){showToast('發布失敗：'+e.message);});
+}
 views.book=function(){
   var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'">'+s.name+' ('+fmtNT(s.price)+')</option>';}).join('');
   var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
@@ -2110,7 +2207,9 @@ function customerBook(){
   var id=++BOOKING_ID;
   BOOKINGS.push({id:id,name:name,phone:phone,t:tid,svc:svcId,date:date,start:startMin,time:tv,note:'線上預約',pay:'cash',status:'confirmed'});
   if(!getPatient(phone))PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});
-  syncOne(id);
+  /* 診所自己的裝置（已登入）→ 直接同步診所行事曆；病患自己的裝置（未登入）→ 送回伺服器，避免要求病患登入 Google */
+  if(currentUser){syncOne(id);}
+  else{submitToServer('booking',{name:name,phone:phone,t:tid,svc:svcId,svcName:svcOf(svcId).name,date:date,time:tv,note:'線上預約'});}
   document.getElementById('frame').innerHTML='<div style="min-height:620px;background:var(--bg);display:flex;align-items:center;justify-content:center"><div style="background:#fff;border-radius:18px;padding:40px;text-align:center;max-width:360px;box-shadow:var(--sh-md)"><div style="font-size:46px;margin-bottom:14px">&#10003;</div><h2 style="font-size:20px;margin-bottom:8px">預約已送出</h2><p style="color:var(--slate);font-size:13px;margin-bottom:22px">我們會在就診前與您確認。</p><button class="btn" onclick="go(\'book\')">再次預約</button></div></div>';
   showToast('預約已送出');
 }
@@ -2182,6 +2281,8 @@ function iSubmit(){
       sendLineMsg(p.lineId,msg);
     }
   }
+  /* 病患自己的裝置（未登入）→ 將初診資料送回伺服器，診所端才收得到 */
+  if(!currentUser)submitToServer('intake',_iData);
   _iStep=99;document.getElementById('frame').innerHTML=views.intake();
 }
 function resetIntake(){_iStep=1;_iData={};_iGender='';document.getElementById('frame').innerHTML=views.intake();}
@@ -2206,10 +2307,16 @@ function go(v){
   }
   document.querySelectorAll('.sw').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
   if(v==='bookings')calToday();
+  if(v==='book')ensureCatalogForPublic('book');
 }
 document.getElementById('modalBg').addEventListener('click',function(e){if(e.target.id==='modalBg')closeModal();});
 document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.v);});});
-go('login');
+/* 支援深層連結：?view=intake 直接開初診問卷、?view=book 開線上預約（病患從 LINE 點連結會用到） */
+(function(){
+  var start='login';
+  try{var v=new URLSearchParams(window.location.search).get('view');if(v==='intake'||v==='book')start=v;}catch(e){}
+  go(start);
+})();
 </script>
 </body>
 </html>
