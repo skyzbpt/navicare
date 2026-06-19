@@ -2082,10 +2082,10 @@ function uploadLoginLogo(input){
   var file=input.files&&input.files[0];if(!file)return;
   if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}
   var reader=new FileReader();
-  reader.onload=function(e){LOGIN_LOGO=e.target.result;go('receipt');showToast('登入頁 Logo 已上傳');};
+  reader.onload=function(e){LOGIN_LOGO=e.target.result;go('clinic');showToast('診所 Logo 已上傳');};
   reader.readAsDataURL(file);
 }
-function clearLoginLogo(){LOGIN_LOGO='';go('receipt');showToast('已移除登入頁 Logo');}
+function clearLoginLogo(){LOGIN_LOGO='';go('clinic');showToast('已移除診所 Logo');}
 function uploadLogo(input){
   var file=input.files&&input.files[0];if(!file)return;
   if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}
@@ -2096,6 +2096,19 @@ function uploadLogo(input){
 function clearLogo(){CLINIC_LOGO='';go('receipt');showToast('已移除 Logo');}
 
 /* ============ 診所管理 ============ */
+var ROLE_LABELS={admin:'管理員',therapist:'治療師'};
+function clinicLogoCard(){
+  var preview=LOGIN_LOGO
+    ? '<img src="'+LOGIN_LOGO+'" style="width:72px;height:72px;border-radius:12px;object-fit:contain;border:1px solid var(--line);background:#fff;padding:5px">'
+    : '<div style="width:72px;height:72px;border:1.5px dashed var(--mist);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--slate);text-align:center">尚未上傳</div>';
+  var btns=(LOGIN_LOGO?'<button class="btn gray" onclick="clearLoginLogo()">移除</button>':'')
+    +'<label class="btn ghost" style="cursor:pointer;font-family:inherit">上傳<input type="file" accept="image/*" style="display:none" onchange="uploadLoginLogo(this)"></label>';
+  return '<div class="card"><div class="card-head"><h3>診所 Logo</h3><span class="tag mint">登入頁 · 側欄</span></div><div class="card-body">'
+    +'<div class="banner info"><span>i</span><div>上傳後會取代登入頁與後台側欄的房子圖示。建議使用正方形 PNG、去背效果更佳。</div></div>'
+    +'<div class="row" style="gap:16px;align-items:center">'+preview
+    +'<div style="flex:1"><div style="font-weight:700;font-size:14px;margin-bottom:4px">前台登入頁 Logo</div><div style="font-size:12px;color:var(--slate)">取代登入頁與側欄的房子圖示</div></div>'
+    +'<div class="row" style="gap:6px">'+btns+'</div></div></div></div>';
+}
 views.clinic=function(){
   var ci=[['name','機構名稱'],['reg','登記字號'],['owner','負責人'],['address','地址'],['tel','電話']];
   var ciH=ci.map(function(f){return '<div class="field"><label>'+f[1]+'</label><input id="ci-'+f[0]+'" value="'+esc(CLINIC_INFO[f[0]])+'"></div>';}).join('');
@@ -2132,7 +2145,6 @@ function pickGCalendar(){
 function chooseGCal(id){CLINIC_INFO.calendarId=id;closeModal();go('clinic');showToast('已選擇行事曆並儲存');}
 
 /* ── 員工帳號與權限 ── */
-var ROLE_LABELS={admin:'管理員',therapist:'治療師'};
 function staffRoleOptions(sel){
   return [['admin','管理員（所有頁面）'],['therapist','治療師（看診相關）']].map(function(r){
     return '<option value="'+r[0]+'"'+(r[0]===sel?' selected':'')+'>'+r[1]+'</option>';
