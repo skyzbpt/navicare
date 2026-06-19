@@ -1111,20 +1111,21 @@ function doCheckout(id){
   saveAll();
 }
 function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" style="width:76px;height:76px;object-fit:contain">';return '<svg width="90" height="60" viewBox="0 0 120 80" style="opacity:.85"><ellipse cx="60" cy="40" rx="56" ry="36" fill="none" stroke="#c0392b" stroke-width="3"/><ellipse cx="60" cy="40" rx="50" ry="30" fill="none" stroke="#c0392b" stroke-width="1"/><text x="60" y="48" text-anchor="middle" fill="#c0392b" font-size="22" font-weight="900" letter-spacing="2">收據章</text></svg>';}
-function stampOwner(){if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:68px;height:68px;object-fit:contain">';return '<svg width="68" height="68" viewBox="0 0 80 80" style="opacity:.85"><rect x="4" y="4" width="72" height="72" rx="5" fill="none" stroke="#c0392b" stroke-width="3"/><text x="40" y="34" text-anchor="middle" fill="#c0392b" font-size="17" font-weight="900">印花</text><text x="40" y="56" text-anchor="middle" fill="#c0392b" font-size="17" font-weight="900">章</text></svg>';}
+function stampOwner(){
+  if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:68px;height:68px;object-fit:contain">';
+  return '<svg width="68" height="68" viewBox="0 0 80 80" style="opacity:.85">'+
+    '<rect x="4" y="4" width="72" height="72" rx="5" fill="none" stroke="#c0392b" stroke-width="3"/>'+
+    '<rect x="9" y="9" width="62" height="62" rx="3" fill="none" stroke="#c0392b" stroke-width="1"/>'+
+    '<text x="40" y="47" text-anchor="middle" fill="#c0392b" font-size="20" font-weight="900" letter-spacing="3">印花章</text>'+
+    '</svg>';
+}
 function buildNameSeal(nm,w,h){
-  var chars=nm.split('');var n=chars.length;var tx='';
-  if(n<=2){
-    var fs=n===1?30:22;
-    tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.38)+'" text-anchor="middle" fill="#fff" font-size="'+fs+'" font-weight="900" font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';
-  }else if(n===3){
-    tx='<text x="'+(w/2)+'" y="'+(h*0.39)+'" text-anchor="middle" fill="#fff" font-size="19" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars[0])+'</text>'+
-       '<text x="'+(w/2)+'" y="'+(h*0.72)+'" text-anchor="middle" fill="#fff" font-size="19" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars[1]+chars[2])+'</text>';
-  }else{
-    var hf=Math.ceil(n/2);
-    tx='<text x="'+(w/2)+'" y="'+(h*0.38)+'" text-anchor="middle" fill="#fff" font-size="15" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars.slice(0,hf).join(''))+'</text>'+
-       '<text x="'+(w/2)+'" y="'+(h*0.68)+'" text-anchor="middle" fill="#fff" font-size="15" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars.slice(hf).join(''))+'</text>';
-  }
+  var n=nm.length;
+  /* 字數越多字型越小，維持單行；最大 22px，最小 11px */
+  var fs=Math.max(11,Math.min(22,Math.floor((w-14)/(Math.max(n,1)*0.72))));
+  var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.38)+'" text-anchor="middle" fill="#fff" '+
+    'font-size="'+fs+'" font-weight="900" letter-spacing="1" '+
+    'font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';
   return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0">'+
     '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="6" fill="#c0392b"/>'+
     '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="4" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>'+
@@ -1819,53 +1820,81 @@ function addLeave(tid){
   var t=THERAPISTS.find(function(x){return x.id===tid;});ensureLeaves(t);
   var date=document.getElementById('lv-date').value;
   var reason=document.getElementById('lv-reason').value.trim();
+  var allDayCb=document.getElementById('lv-allday');
+  var allDay=!allDayCb||allDayCb.checked;
+  var startTime=!allDay?(document.getElementById('lv-start').value||'09:00'):'';
+  var endTime=!allDay?(document.getElementById('lv-end').value||'18:00'):'';
   if(!date){showToast('請選擇休假日期');return;}
-  if(t.leaves.some(function(l){return l.date===date;})){showToast('該日期已在休假清單中');return;}
-  t.leaves.push({date:date,reason:reason});
-  t.leaves.sort(function(a,b){return a.date.localeCompare(b.date);});
-  go('schedule');showToast('已新增特別休假日');
+  if(!allDay&&startTime>=endTime){showToast('結束時間必須晚於開始時間');return;}
+  if(allDay&&t.leaves.some(function(l){return l.date===date&&(l.allDay===undefined||l.allDay===true);})){showToast('該日期已有全天休假');return;}
+  t.leaves.push({date:date,allDay:allDay,startTime:startTime,endTime:endTime,reason:reason});
+  t.leaves.sort(function(a,b){return a.date.localeCompare(b.date)||((a.startTime||'').localeCompare(b.startTime||''));});
+  go('schedule');showToast('已新增'+(allDay?'全天':'時段')+'休假');
 }
-function rmLeave(tid,date){
+function rmLeave(tid,idx){
   var t=THERAPISTS.find(function(x){return x.id===tid;});ensureLeaves(t);
-  var i=t.leaves.findIndex(function(l){return l.date===date;});if(i>-1)t.leaves.splice(i,1);
-  go('schedule');showToast('已移除休假日');
+  if(idx>=0&&idx<t.leaves.length)t.leaves.splice(idx,1);
+  go('schedule');showToast('已移除休假');
 }
-function isLeaveDay(tid,date){var t=THERAPISTS.find(function(x){return x.id===tid;});return !!(t&&t.leaves&&t.leaves.some(function(l){return l.date===date;}));}
+function isLeaveDay(tid,date){
+  var t=THERAPISTS.find(function(x){return x.id===tid;});
+  /* 只有「全天」假才算整天休診；舊資料沒有 allDay 欄位，視為全天 */
+  return !!(t&&t.leaves&&t.leaves.some(function(l){return l.date===date&&(l.allDay===undefined||l.allDay===true);}));
+}
+function hasLeaveConflict(tid,date,startMin,endMin){
+  var t=THERAPISTS.find(function(x){return x.id===tid;});
+  if(!t||!t.leaves)return false;
+  return t.leaves.some(function(l){
+    if(l.date!==date)return false;
+    if(l.allDay===undefined||l.allDay===true)return true;
+    var ls=hmToMin(l.startTime),le=hmToMin(l.endTime);
+    return startMin<le&&endMin>ls;
+  });
+}
+function toggleLeaveTime(cb){
+  var show=!cb.checked;
+  ['lv-start','lv-dash','lv-end'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display=show?'':'none';});
+}
 function hmToMin(s){var p=String(s||'').split(':');return Number(p[0])*60+(Number(p[1])||0);}
 function hasSchedule(t){return !!(t.week&&Object.keys(t.week).some(function(k){return t.week[k]&&t.week[k].length;}));}
 function isWorkingSlot(tid,ds,m){
   var t=THERAPISTS.find(function(x){return x.id===tid;});
   if(!t)return false;
-  if(isLeaveDay(tid,ds))return false;
+  if(hasLeaveConflict(tid,ds,m,m+15))return false;
   var wd=new Date(ds+'T00:00:00').getDay();
   var sh=(t.week&&t.week[wd])||[];
   return sh.some(function(s){var st=hmToMin(s.start),en=hmToMin(s.end);return st<m+15&&en>m;});
 }
-/* 檢查指定時間（含整段服務時長）是否落在治療師上班時段內 */
+/* 檢查指定時間（含整段服務時長）是否落在治療師上班時段內，並排除休假衝突 */
 function isWithinShift(tid,ds,startMin,durMin){
   var t=THERAPISTS.find(function(x){return x.id===tid;});
   if(!t)return false;
   if(isLeaveDay(tid,ds))return false;
-  if(!hasSchedule(t))return true; /* 未設定班表者不限制 */
+  var dur=Number(durMin)||0;
+  var endMin=startMin+Math.max(dur,1);
+  if(hasLeaveConflict(tid,ds,startMin,endMin))return false;
+  if(!hasSchedule(t))return true;
   var wd=new Date(ds+'T00:00:00').getDay();
   var sh=(t.week&&t.week[wd])||[];
-  if(!sh.length)return false; /* 該天沒有班表，不可預約 */
-  var dur=Number(durMin)||0;
-  var endMin=startMin+Math.max(dur,1); /* 至少 1 分鐘，避免 0 時長邊界漏洞 */
+  if(!sh.length)return false;
   return sh.some(function(s){
     var st=hmToMin(s.start),en=hmToMin(s.end);
-    /* 開始時間需在班表內，且結束時間不超過班表結束（不允許剛好卡在結束點開始） */
-    return startMin>=st && startMin<en && endMin<=en;
+    return startMin>=st&&startMin<en&&endMin<=en;
   });
 }
 function leaveRows(t){
   ensureLeaves(t);
   if(!t.leaves.length)return '<div class="empty">尚無特別休假日</div>';
-  return t.leaves.map(function(l){
+  return t.leaves.map(function(l,i){
     var d=new Date(l.date+'T00:00:00');var w=DOW_N[d.getDay()];
+    var isAllDay=l.allDay===undefined||l.allDay===true;
+    var timeStr=isAllDay?'全天':((l.startTime||'--')+'–'+(l.endTime||'--'));
     return '<div class="row" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)">'+
-      '<div class="row" style="gap:10px"><span class="day-badge" style="background:var(--danger)">假</span><div><div style="font-weight:700">'+l.date+' （週'+w+'）</div>'+(l.reason?'<div style="font-size:11px;color:var(--slate)">'+esc(l.reason)+'</div>':'')+'</div></div>'+
-      '<button class="shift-del" onclick="rmLeave(\''+t.id+'\',\''+l.date+'\')">&times;</button></div>';
+      '<div class="row" style="gap:10px">'+
+      '<span class="day-badge" style="background:'+(isAllDay?'var(--danger)':'var(--warn)')+'">'+(isAllDay?'假':'段')+'</span>'+
+      '<div><div style="font-weight:700">'+l.date+' （週'+w+'）<span class="tag '+(isAllDay?'amber':'mint')+'" style="margin-left:6px;font-size:10px">'+esc(timeStr)+'</span></div>'+
+      (l.reason?'<div style="font-size:11px;color:var(--slate)">'+esc(l.reason)+'</div>':'')+'</div></div>'+
+      '<button class="shift-del" onclick="rmLeave(\''+t.id+'\','+i+')">&times;</button></div>';
   }).join('');
 }
 views.schedule=function(){
@@ -1883,7 +1912,14 @@ views.schedule=function(){
   return shell('schedule','排班設定',
     '<div class="card"><div class="card-head"><h3><span class="cal-dot" style="background:'+tColor(t.id)+';display:inline-block;margin-right:6px"></span>'+t.name+' 每週班表</h3><div class="row" style="gap:8px"><span class="tag mint">每週 '+workN+' 天</span><button class="btn sm" onclick="saveSched(\''+t.id+'\')">儲存排班</button></div></div><div class="card-body">'+cards+'</div></div>'+
     '<div class="card"><div class="card-head"><h3>特別休假日</h3><span class="tag amber">'+t.leaves.length+' 天</span></div><div class="card-body">'+
-    '<div class="row" style="gap:8px;margin-bottom:14px"><input id="lv-date" type="date" min="'+todayStr()+'" max="2100-12-31" style="padding:9px 11px;border:1.5px solid var(--mist);border-radius:8px;outline:none"><input id="lv-reason" placeholder="事由（選填，例：國定假日 / 進修 / 請假）" style="flex:1;min-width:150px;padding:9px 11px;border:1.5px solid var(--mist);border-radius:8px;outline:none"><button class="btn sm" onclick="addLeave(\''+t.id+'\')">+ 新增休假</button></div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center">'+
+    '<input id="lv-date" type="date" min="'+todayStr()+'" max="2100-12-31" style="padding:9px 11px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
+    '<label class="row" style="gap:5px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer"><input type="checkbox" id="lv-allday" checked onchange="toggleLeaveTime(this)" style="width:auto;cursor:pointer"> 全天</label>'+
+    '<input id="lv-start" type="time" value="09:00" style="display:none;padding:9px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
+    '<span id="lv-dash" style="display:none;color:var(--slate);font-weight:700">–</span>'+
+    '<input id="lv-end" type="time" value="18:00" style="display:none;padding:9px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
+    '<input id="lv-reason" placeholder="事由（選填）" style="flex:1;min-width:120px;padding:9px 11px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
+    '<button class="btn sm" onclick="addLeave(\''+t.id+'\')">+ 新增</button></div>'+
     '<div id="leaveList">'+leaveRows(t)+'</div>'+
     '<div class="banner info" style="margin-top:14px"><span>i</span><div>特別休假日為單一日期的休診設定，優先於每週班表；設定後該日於預約行事曆會以紅點標示為休診。</div></div>'+
     '</div></div>',
@@ -2328,8 +2364,7 @@ function saveAll(){
     PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,
     PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,
     EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,
-    CLINIC_INFO:CLINIC_INFO
-    /* STAMPS / STAMP_T / CLINIC_LOGO 為 base64 圖片，體積過大無法存伺服器，每次重新上傳即可 */
+    CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO
   };
   fetch(RENDER_URL+'/clinic-data',{
     method:'POST',
@@ -2370,7 +2405,9 @@ function loadFromServer(cb){
     if(s.EDU_CATS)EDU_CATS=s.EDU_CATS;
     if(s.EDU_SENT)Object.assign(EDU_SENT,s.EDU_SENT);
     if(s.CLINIC_INFO)Object.assign(CLINIC_INFO,s.CLINIC_INFO);
-    /* STAMPS / STAMP_T / CLINIC_LOGO 不從伺服器載入（base64 圖片過大，每次需重新上傳） */
+    if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);
+    if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
+    if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;
     SVC_ID=SERVICES.length?Math.max.apply(null,SERVICES.map(function(x){return parseInt(x.id)||100;}))+1:100;
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
