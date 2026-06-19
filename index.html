@@ -1112,7 +1112,29 @@ function doCheckout(id){
 }
 function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" style="width:76px;height:76px;object-fit:contain">';return '<svg width="90" height="60" viewBox="0 0 120 80" style="opacity:.85"><ellipse cx="60" cy="40" rx="56" ry="36" fill="none" stroke="#c0392b" stroke-width="3"/><ellipse cx="60" cy="40" rx="50" ry="30" fill="none" stroke="#c0392b" stroke-width="1"/><text x="60" y="48" text-anchor="middle" fill="#c0392b" font-size="22" font-weight="900" letter-spacing="2">收據章</text></svg>';}
 function stampOwner(){if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:68px;height:68px;object-fit:contain">';return '<svg width="68" height="68" viewBox="0 0 80 80" style="opacity:.85"><rect x="4" y="4" width="72" height="72" rx="5" fill="none" stroke="#c0392b" stroke-width="3"/><text x="40" y="34" text-anchor="middle" fill="#c0392b" font-size="17" font-weight="900">印花</text><text x="40" y="56" text-anchor="middle" fill="#c0392b" font-size="17" font-weight="900">章</text></svg>';}
-function stampT(tid){if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:68px;height:40px;object-fit:contain">';var nm=tName(tid).replace('物理治療師','').trim();return '<svg width="68" height="40" viewBox="0 0 80 44" style="opacity:.85"><rect x="4" y="4" width="72" height="36" rx="4" fill="none" stroke="#c0392b" stroke-width="2.5"/><text x="40" y="28" text-anchor="middle" fill="#c0392b" font-size="16" font-weight="900">'+esc(nm)+'</text></svg>';}
+function buildNameSeal(nm,w,h){
+  var chars=nm.split('');var n=chars.length;var tx='';
+  if(n<=2){
+    var fs=n===1?30:22;
+    tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.38)+'" text-anchor="middle" fill="#fff" font-size="'+fs+'" font-weight="900" font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';
+  }else if(n===3){
+    tx='<text x="'+(w/2)+'" y="'+(h*0.39)+'" text-anchor="middle" fill="#fff" font-size="19" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars[0])+'</text>'+
+       '<text x="'+(w/2)+'" y="'+(h*0.72)+'" text-anchor="middle" fill="#fff" font-size="19" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars[1]+chars[2])+'</text>';
+  }else{
+    var hf=Math.ceil(n/2);
+    tx='<text x="'+(w/2)+'" y="'+(h*0.38)+'" text-anchor="middle" fill="#fff" font-size="15" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars.slice(0,hf).join(''))+'</text>'+
+       '<text x="'+(w/2)+'" y="'+(h*0.68)+'" text-anchor="middle" fill="#fff" font-size="15" font-weight="900" font-family="Noto Serif TC,serif">'+esc(chars.slice(hf).join(''))+'</text>';
+  }
+  return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0">'+
+    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="6" fill="#c0392b"/>'+
+    '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="4" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>'+
+    tx+'</svg>';
+}
+function stampT(tid){
+  if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:60px;height:60px;object-fit:contain">';
+  var nm=tName(tid).replace('物理治療師','').replace('治療師','').trim()||tid;
+  return buildNameSeal(nm,60,60);
+}
 function receiptHTML(b,name,dob,idn){
   var sv=svcOf(b.svc);var pay={cash:'現金',transfer:'匯款',card:'刷卡'}[b.pay]||'現金';
   var headLogo=CLINIC_LOGO?'<img src="'+CLINIC_LOGO+'" style="max-width:220px;max-height:70px;object-fit:contain;margin:0 auto 4px;display:block">':'<div class="rc-clinic">'+esc(CLINIC_INFO.name)+'</div>';
@@ -1947,7 +1969,12 @@ views.receipt=function(){
     '<div class="sec-label">印章</div>'+
     stampUploadBox('收據章','clinic')+
     stampUploadBox('印花章','owner')+
-    '<div class="sec-label">治療師章</div>'+
+    '<div class="sec-label">治療師章（依姓名自動產生）</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:18px;padding:10px 0 16px">'+
+    THERAPISTS.map(function(t){var nm=tName(t.id).replace('物理治療師','').replace('治療師','').trim();return '<div style="text-align:center"><div>'+stampT(t.id)+'</div><div style="font-size:11px;color:var(--slate);margin-top:6px">'+esc(nm)+'</div></div>';}).join('')+
+    '</div>'+
+    '<div class="banner info" style="margin-bottom:10px"><span>i</span><div>治療師章依姓名自動產生，無需上傳；若需自訂章面，點下方「上傳」覆蓋即可。</div></div>'+
+    '<div class="sec-label">自訂治療師章（選填）</div>'+
     tStamps+
     '</div></div>'+
     '<div class="card"><div class="card-head"><h3>收據預覽</h3></div><div class="card-body" style="background:var(--bg)">'+receiptHTML(sample,'（範例）王小明','1988-03-15','A123456789')+'</div></div>'+
@@ -2301,7 +2328,8 @@ function saveAll(){
     PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,
     PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,
     EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,
-    CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO
+    CLINIC_INFO:CLINIC_INFO
+    /* STAMPS / STAMP_T / CLINIC_LOGO 為 base64 圖片，體積過大無法存伺服器，每次重新上傳即可 */
   };
   fetch(RENDER_URL+'/clinic-data',{
     method:'POST',
@@ -2342,9 +2370,7 @@ function loadFromServer(cb){
     if(s.EDU_CATS)EDU_CATS=s.EDU_CATS;
     if(s.EDU_SENT)Object.assign(EDU_SENT,s.EDU_SENT);
     if(s.CLINIC_INFO)Object.assign(CLINIC_INFO,s.CLINIC_INFO);
-    if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);
-    if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
-    if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;
+    /* STAMPS / STAMP_T / CLINIC_LOGO 不從伺服器載入（base64 圖片過大，每次需重新上傳） */
     SVC_ID=SERVICES.length?Math.max.apply(null,SERVICES.map(function(x){return parseInt(x.id)||100;}))+1:100;
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
