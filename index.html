@@ -430,10 +430,24 @@ function copyLineUid(uid){
 }
 function lineCreatePatient(i){
   var u=_lineUsers[i];if(!u)return;
-  var phone='LINE-'+String(u.userId).slice(-6);
-  if(getPatient(phone)){showToast('此好友已建立過病患');return;}
-  PATIENTS.push({phone:phone,name:u.displayName||'LINE好友',dob:'',idNum:'',gender:'',line:true,lineId:u.userId,note:'由 LINE 好友同步建立'});
-  renderLineSync();showToast('已建立病患並綁定 LINE');
+  if(PATIENTS.some(function(p){return p.lineId===u.userId;})){showToast('此好友已建立過病患');return;}
+  /* 電話留空，由使用者於病患管理自行填寫 */
+  var phone='';
+  modal('<div class="modal-head" style="background:#06C755">建立病患<button class="x" onclick="lineSyncModal()">&times;</button></div>'+
+    '<div class="modal-body"><div style="background:#f0fff8;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-weight:700">'+esc(u.displayName||u.userId)+'</div>'+
+    '<div class="field"><label>姓名</label><input id="lc-name" value="'+esc(u.displayName||'')+'"></div>'+
+    '<div class="field"><label>電話（請自行填寫）</label><input id="lc-phone" placeholder="09xx-xxx-xxx"></div>'+
+    '<div style="font-size:11px;color:var(--slate)">建立後會自動綁定此 LINE 好友</div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="lineSyncModal()">返回</button><button class="btn" style="background:#06C755" onclick="confirmLineCreate(\''+esc(u.userId)+'\')">建立並綁定</button></div>');
+}
+function confirmLineCreate(userId){
+  var u=_lineUsers.find(function(x){return x.userId===userId;});if(!u)return;
+  var name=document.getElementById('lc-name').value.trim()||u.displayName||'LINE好友';
+  var phone=document.getElementById('lc-phone').value.trim();
+  if(!phone){showToast('請填寫電話');return;}
+  if(getPatient(phone)){showToast('此電話已存在');return;}
+  PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:true,lineId:userId,avatar:u.pictureUrl||'',note:'由 LINE 好友同步建立'});
+  lineSyncModal();showToast('已建立病患並綁定 LINE');
 }
 function lineBindExisting(i){
   var u=_lineUsers[i];if(!u)return;
@@ -444,8 +458,9 @@ function lineBindExisting(i){
     '<div class="modal-foot"><button class="btn gray" onclick="lineSyncModal()">返回</button><button class="btn" style="background:#06C755" onclick="confirmLineBind(\''+esc(u.userId)+'\')">確認綁定</button></div>');
 }
 function confirmLineBind(userId){
+  var u=_lineUsers.find(function(x){return x.userId===userId;});
   var ph=document.getElementById('lineBindSel').value;var p=getPatient(ph);
-  if(p){p.lineId=userId;p.line=true;showToast('已綁定 LINE');}
+  if(p){p.lineId=userId;p.line=true;if(u&&u.pictureUrl)p.avatar=u.pictureUrl;showToast('已綁定 LINE');}
   lineSyncModal();
 }
 
@@ -839,7 +854,7 @@ function checkoutModal(id){
     '<div class="modal-body">'+
     '<div style="background:var(--mint-l);border:1.5px solid var(--mint);border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><div style="font-size:13px;color:var(--mint-d)">'+esc(sv.name)+'</div><div style="font-size:11px;color:var(--slate)">'+b.date+' '+b.time+'</div></div><div style="font-size:24px;font-weight:800;color:var(--mint-d)">'+fmtNT(sv.price)+'</div></div>'+
     '<div class="field"><label>付款方式</label><div class="pay-pills" id="coPay"><button class="pay-pill sel" data-p="cash" onclick="setCoPay(\'cash\')">現金</button><button class="pay-pill" data-p="transfer" onclick="setCoPay(\'transfer\')">匯款</button><button class="pay-pill" data-p="card" onclick="setCoPay(\'card\')">刷卡</button></div></div>'+
-    '<div id="coTransfer" style="display:none;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:10px;padding:12px 14px;margin-bottom:10px"><div class="grid2"><div class="field" style="margin-bottom:0"><label>匯款後五碼 *</label><input id="co-last5" maxlength="5" inputmode="numeric" placeholder="例：12345" style="font-family:monospace;letter-spacing:2px" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="field" style="margin-bottom:0"><label>匯款日期 *</label><input id="co-tdate" type="date" value="'+todayStr()+'"></div></div></div>'+
+    '<div id="coTransfer" style="display:none;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:10px;padding:12px 14px;margin-bottom:10px"><div class="grid2"><div class="field" style="margin-bottom:0"><label>匯款後五碼 *</label><input id="co-last5" maxlength="5" inputmode="numeric" placeholder="例：12345" style="font-family:monospace;letter-spacing:2px" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="field" style="margin-bottom:0"><label>匯款日期 *</label><input id="co-tdate" type="date" style="width:150px;max-width:100%"></div></div></div>'+
     '<label class="row" style="font-size:13px;gap:8px;margin:10px 0"><input type="checkbox" id="coRc" style="width:auto"> 開立收據</label>'+
     '<div style="font-size:11px;color:var(--slate)">勾選後將自動帶入會員的姓名、出生年月日、身分證字號</div>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="doCheckout('+id+')">確認結帳</button></div>');
@@ -1006,7 +1021,8 @@ function ptLast(ph){var ds=BOOKINGS.filter(function(b){return b.phone===ph;}).ma
 views.patients=function(){
   var rows=PATIENTS.map(function(p){
     var it=INTAKE_DATA[p.phone];
-    return '<tr><td><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(p.phone)+'</div></td>'+
+    var av=p.avatar?'<img src="'+esc(p.avatar)+'" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.outerHTML=\'<div style=&quot;width:34px;height:34px;border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;flex-shrink:0&quot;>'+esc((p.name||'?').slice(0,1))+'</div>\'">':'<div style="width:34px;height:34px;border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;flex-shrink:0">'+esc((p.name||'?').slice(0,1))+'</div>';
+    return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(p.phone)+'</div></div></div></td>'+
       '<td>'+esc(p.phone)+'</td><td>'+ptVisits(p.phone)+' 次</td><td>'+ptLast(p.phone)+'</td>'+
       '<td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+p.phone+'\')">綁定</button>')+'</td>'+
       '<td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+p.phone+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+esc(p.name)+'\',\''+p.phone+'\')">發送</button>')+'</td>'+
@@ -1022,8 +1038,8 @@ function addPtModal(){
   _ptGender='';
   modal('<div class="modal-head" style="background:var(--navy)">新增病患<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body">'+
-    '<div class="grid2"><div class="field"><label>姓名</label><input id="np-name"></div><div class="field"><label>電話</label><input id="np-phone" placeholder="09xx-xxx-xxx"></div></div>'+
-    '<div class="grid2"><div class="field"><label>出生年月日</label><input id="np-dob" type="date" min="1900-01-01" max="'+todayStr()+'"></div><div class="field"><label>身分證字號</label><input id="np-id" style="font-family:monospace" oninput="this.value=this.value.toUpperCase()"></div></div>'+
+    '<div class="grid2"><div class="field"><label>姓名</label><input id="np-name"></div><div class="field"><label>出生年月日</label><input id="np-dob" type="date" min="1900-01-01" max="'+todayStr()+'"></div></div>'+
+    '<div class="grid2"><div class="field"><label>電話</label><input id="np-phone" placeholder="09xx-xxx-xxx"></div><div class="field"><label>身分證字號</label><input id="np-id" style="font-family:monospace" oninput="this.value=this.value.toUpperCase()"></div></div>'+
     '<div class="field"><label>性別</label><div class="row"><button type="button" class="gender-btn" id="g-male" onclick="setGender(\'male\')">男</button><button type="button" class="gender-btn" id="g-female" onclick="setGender(\'female\')">女</button></div></div>'+
     '<div class="field"><label>備註</label><textarea id="np-note" style="height:50px;resize:none"></textarea></div>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitPt()">新增</button></div>');
