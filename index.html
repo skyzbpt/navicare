@@ -402,6 +402,21 @@ function submitLineNotify(bId){
 /* ── LINE 好友同步至病患管理 ── */
 var _lineUsers=[];
 function lineBoundPatient(userId){return PATIENTS.find(function(p){return p.lineId===userId;});}
+function lineSyncSilent(){
+  if(!RENDER_URL){showToast('請先在程式碼填入 RENDER_URL');return;}
+  showToast('同步 LINE 好友中…');
+  fetch(RENDER_URL+'/line-users').then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(data){
+    _lineUsers=Array.isArray(data)?data:(data.users||[]);
+    if(!_lineUsers.length){showToast('尚無 LINE 好友資料');return;}
+    autoImportLine(false);
+    go('patients');
+  }).catch(function(){
+    showToast('無法連線至 LINE 伺服器');
+  });
+}
 function lineSyncModal(){
   if(!RENDER_URL){showToast('請先在程式碼填入 RENDER_URL');return;}
   modal('<div class="modal-head" style="background:#06C755">LINE 好友同步<button class="x" onclick="closeModal()">&times;</button></div>'+
@@ -555,34 +570,46 @@ function triggerGoogleLogin(){
     go('dashboard');return;
   }
   setLoading(true);
+  function finishLogin(token,expIn){
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}})
+      .then(function(res){return res.json();}).then(function(info){
+        var email=(info.email||'');
+        var cfg=EMAIL_WHITELIST[email]||EMAIL_WHITELIST[email.toLowerCase()];
+        if(!cfg){
+          /* 目前瀏覽器預設的 Google 帳號不在白名單：讓使用者改選正確帳號（只自動補跳一次） */
+          if(!loginPicked){loginPicked=true;loginClient.requestAccessToken({prompt:'select_account'});return;}
+          setLoading(false);showLoginError('此帳號未獲授權\n'+email+'\n請改用診所授權的 Gmail 帳號登入');return;
+        }
+        /* 通過白名單才存行事曆／寄信用 token，整個工作階段都不再要求授權 */
+        gcalToken=token;
+        gmailToken=token;
+        gcalTokenExp=Date.now()+(Number(expIn||3600)-60)*1000;
+        gcalConsented=true;
+        setLoading(false);
+        currentUser={email:email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
+        go('dashboard');
+      }).catch(function(){setLoading(false);showLoginError('無法取得帳號資訊，請再試一次');});
+  }
   function initAndLogin(){
     try{
-      /* 一次取得登入 + 行事曆 + Gmail 授權，後續靜默續期不再驗證 */
-      if(!gcalClient){
-        gcalClient=google.accounts.oauth2.initTokenClient({
+      /* 登入時一次取得身分＋行事曆＋寄信權限，第一次同意後整個工作階段與日後登入都靜默 */
+      if(!loginClient){
+        loginClient=google.accounts.oauth2.initTokenClient({
           client_id:GOOGLE_CLIENT_ID,
           scope:'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',
           callback:function(r){
             if(r.error){
-              if(!gcalConsented){gcalConsented=true;gcalClient.requestAccessToken({prompt:'consent'});return;}
+              /* 首次尚未授權：跳一次同意畫面，之後 Google 會記住並靜默通過 */
+              if(!loginConsented){loginConsented=true;loginClient.requestAccessToken({prompt:'consent'});return;}
               setLoading(false);showLoginError('登入失敗：'+r.error);return;
             }
-            gcalToken=r.access_token;
-            gmailToken=r.access_token;
-            gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;
-            gcalConsented=true;
-            fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+r.access_token}})
-              .then(function(res){return res.json();}).then(function(info){
-                setLoading(false);
-                var cfg=EMAIL_WHITELIST[info.email];
-                if(!cfg){showLoginError('此帳號未獲授權\n'+info.email);return;}
-                currentUser={email:info.email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
-                go('dashboard');
-              }).catch(function(){setLoading(false);showLoginError('無法取得帳號資訊，請再試一次');});
+            loginConsented=true;
+            finishLogin(r.access_token,r.expires_in);
           }
         });
       }
-      gcalClient.requestAccessToken({prompt:gcalConsented?'':'consent'});
+      /* prompt:'' → 已同意過的帳號完全靜默，不再彈出任何畫面 */
+      loginClient.requestAccessToken({prompt:''});
     }catch(e){setLoading(false);showLoginError('登入初始化失敗：'+e.message);}
   }
   if(typeof google!=='undefined'&&google.accounts){initAndLogin();}
@@ -815,7 +842,6 @@ views.bookings=function(){
     '<button class="btn gray sm" onclick="calToday()">本週</button>'+
     '<div class="row" id="calPills" style="gap:5px">'+calPills()+'</div>'+
     '<button class="btn sm" onclick="addBkModal()">+ 新增預約</button>'+
-    '<button class="btn ghost sm" onclick="syncAllGCal()">同步 Google 行事曆</button>'+
     '</div>');
 };
 function addBkModal(){
@@ -963,14 +989,25 @@ function saveBk(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
   var newT=document.getElementById('eb-t').value;
   var newDate=document.getElementById('eb-date').value||b.date;
+  var newSvc=document.getElementById('eb-svc').value;
+  var tv=document.getElementById('eb-time').value;
+  var newStart=b.start;
+  if(tv){var hm=tv.split(':');newStart=Number(hm[0])*60+Number(hm[1]);}
+  /* 休假日不可安排 */
   if(isLeaveDay(newT,newDate)){showToast(tName(newT)+' 於 '+newDate+' 為休假日，無法安排');return;}
+  var dur=svcOf(newSvc).dur;
+  var endMin=newStart+dur;
+  /* 營業時間限制：08:00–22:00（含療程時長） */
+  if(newStart<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間（含療程時長）');return;}
+  /* 編輯後的時段也必須落在該治療師的上班班表內 */
+  if(!isWithinShift(newT,newDate,newStart,dur)){showToast('此時段非 '+tName(newT)+' 的上班時間，無法儲存');return;}
   b.name=document.getElementById('eb-name').value||b.name;
   b.phone=document.getElementById('eb-phone').value||b.phone;
   b.t=newT;
-  b.svc=document.getElementById('eb-svc').value;
+  b.svc=newSvc;
   b.date=newDate;
-  var tv=document.getElementById('eb-time').value;
-  if(tv){var hm=tv.split(':');b.start=Number(hm[0])*60+Number(hm[1]);b.time=tv;}
+  b.start=newStart;
+  if(tv)b.time=tv;
   b.note=document.getElementById('eb-note').value||'';
   closeModal();renderCal();showToast('已儲存');
   syncOne(id);
@@ -1107,7 +1144,7 @@ function showReceipt(b,name,dob,idn){
 }
 
 /* Google Calendar 同步 */
-var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false;
+var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false,loginPicked=false;
 function loadGsi(cb){
   if(typeof google!=='undefined'&&google.accounts&&google.accounts.oauth2){cb();return;}
   var existing=document.getElementById('__gsi');
@@ -1246,7 +1283,7 @@ views.patients=function(){
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
   return shell('patients','病患管理',body,
-    '<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" style="background:#06C755" onclick="lineSyncModal()">同步 LINE 好友</button><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
+    '<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" style="background:#06C755" onclick="lineSyncSilent()">同步 LINE 好友</button><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
 };
 function filterPt(q){q=(q||'').toLowerCase();document.querySelectorAll('#ptBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 var _ptGender='';
