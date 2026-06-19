@@ -1109,6 +1109,7 @@ function doCheckout(id){
   closeModal();renderCal();
   if(rc){var bb=b;setTimeout(function(){showReceipt(bb,name,dob,idn);},250);showToast('結帳完成，收據已開立');}
   else showToast('結帳完成 '+fmtNT(svcOf(b.svc).price));
+  saveAll();
 }
 function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" style="width:76px;height:76px;object-fit:contain">';return '<svg width="90" height="60" viewBox="0 0 120 80" style="opacity:.85"><ellipse cx="60" cy="40" rx="56" ry="36" fill="none" stroke="#c0392b" stroke-width="3"/><ellipse cx="60" cy="40" rx="50" ry="30" fill="none" stroke="#c0392b" stroke-width="1"/><text x="60" y="48" text-anchor="middle" fill="#c0392b" font-size="22" font-weight="900" letter-spacing="2">收據章</text></svg>';}
 function stampOwner(){if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:68px;height:68px;object-fit:contain">';return '<svg width="68" height="68" viewBox="0 0 80 80" style="opacity:.85"><rect x="4" y="4" width="72" height="72" rx="5" fill="none" stroke="#c0392b" stroke-width="3"/><text x="40" y="34" text-anchor="middle" fill="#c0392b" font-size="17" font-weight="900">印花</text><text x="40" y="56" text-anchor="middle" fill="#c0392b" font-size="17" font-weight="900">章</text></svg>';}
@@ -1518,6 +1519,7 @@ function saveSoap(id){
   var b=document.getElementById('sbody-'+id);if(b)b.classList.add('collapsed');
   var c=document.getElementById('chev-'+id);if(c)c.style.transform='rotate(-90deg)';
   showToast('SOAP 病歷已儲存，已收合');
+  saveAll();
 }
 function delSoap(id){
   modal('<div class="modal-head" style="background:var(--danger)">刪除病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此份 SOAP 病歷？</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmDelSoap('+id+')">確定刪除</button></div>');
@@ -1614,6 +1616,7 @@ function confirmVoidPayment(pid){
     PAYMENTS.splice(i,1);
   }
   closeModal();go('payments');showToast('已作廢，營收已同步更新');
+  saveAll();
 }
 
 /* ============ 員工薪資 ============ */
@@ -2287,6 +2290,63 @@ function iSubmit(){
 }
 function resetIntake(){_iStep=1;_iData={};_iGender='';document.getElementById('frame').innerHTML=views.intake();}
 
+/* ============ localStorage 持久化 ============ */
+var STORAGE_KEY='navicare_v1';
+function saveAll(){
+  try{
+    var snap={
+      SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,
+      BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,
+      PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,
+      SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,
+      PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,
+      PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,
+      EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,
+      CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO
+    };
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(snap));
+  }catch(e){console.warn('localStorage 儲存失敗',e.message);}
+}
+function loadAll(){
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(!raw)return;
+    var s=JSON.parse(raw);
+    if(s.SERVICES){SERVICES.length=0;s.SERVICES.forEach(function(x){SERVICES.push(x);});}
+    if(s.THERAPISTS)THERAPISTS=s.THERAPISTS;
+    if(s.TC)Object.assign(TC,s.TC);
+    if(s.TN)Object.assign(TN,s.TN);
+    if(s.T_SVC_RATES)Object.assign(T_SVC_RATES,s.T_SVC_RATES);
+    if(s.BOOKINGS)BOOKINGS=s.BOOKINGS;
+    if(s.BOOKING_ID)BOOKING_ID=s.BOOKING_ID;
+    if(s.BK_LOG)Object.assign(BK_LOG,s.BK_LOG);
+    if(s.PATIENTS)PATIENTS=s.PATIENTS;
+    if(s.INTAKE_DATA)Object.assign(INTAKE_DATA,s.INTAKE_DATA);
+    if(s.PT_TAG_DATA)Object.assign(PT_TAG_DATA,s.PT_TAG_DATA);
+    if(s.PT_TAG_MAP)Object.assign(PT_TAG_MAP,s.PT_TAG_MAP);
+    if(s.ALL_PT_TAGS){ALL_PT_TAGS.length=0;s.ALL_PT_TAGS.forEach(function(x){ALL_PT_TAGS.push(x);});}
+    if(s.SOAP_NOTES)SOAP_NOTES=s.SOAP_NOTES;
+    if(s.SOAP_ID)SOAP_ID=s.SOAP_ID;
+    if(s.PAYMENTS)PAYMENTS=s.PAYMENTS;
+    if(s.PAYMENT_ID)PAYMENT_ID=s.PAYMENT_ID;
+    if(s.PACKAGES)PACKAGES=s.PACKAGES;
+    if(s.PKG_ID)PKG_ID=s.PKG_ID;
+    if(s.PT_PACKAGES)Object.assign(PT_PACKAGES,s.PT_PACKAGES);
+    if(s.PT_PKG_ID)PT_PKG_ID=s.PT_PKG_ID;
+    if(s.EDU_DATA)EDU_DATA=s.EDU_DATA;
+    if(s.EDU_ID)EDU_ID=s.EDU_ID;
+    if(s.EDU_CATS)EDU_CATS=s.EDU_CATS;
+    if(s.EDU_SENT)Object.assign(EDU_SENT,s.EDU_SENT);
+    if(s.CLINIC_INFO)Object.assign(CLINIC_INFO,s.CLINIC_INFO);
+    if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);
+    if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
+    if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;
+    SVC_ID=SERVICES.length?Math.max.apply(null,SERVICES.map(function(x){return parseInt(x.id)||100;}))+1:100;
+  }catch(e){console.warn('localStorage 讀取失敗',e.message);}
+}
+/* 頁面載入時先讀回資料 */
+loadAll();
+
 /* ============ 路由 ============ */
 function go(v){
   if(typeof views[v]!=='function'){showToast('此頁面開發中');return;}
@@ -2299,6 +2359,8 @@ function go(v){
     }
     if(currentUser.pages.indexOf(v)<0){showToast('您沒有此頁面的存取權限');return;}
   }
+  /* 切頁時自動儲存（公開頁不存，避免覆蓋診所資料） */
+  if(pub.indexOf(v)<0)saveAll();
   try{
     document.getElementById('frame').innerHTML=views[v]();
   }catch(e){
