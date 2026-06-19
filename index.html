@@ -606,6 +606,20 @@ function modal(h){document.getElementById('modalBox').innerHTML=h;document.getEl
 function closeModal(){document.getElementById('modalBg').classList.remove('show');}
 function showToast(m){var t=document.getElementById('sToast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2200);}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function proxyAvatar(url){
+  if(!url)return '';
+  if(typeof RENDER_URL!=='undefined'&&RENDER_URL&&(url.indexOf('profile.line-scdn.net')>-1||url.indexOf('sprofile.line-scdn.net')>-1))
+    return RENDER_URL+'/proxy-image?url='+encodeURIComponent(url);
+  return url;
+}
+function avatarEl(name,avatarUrl,size){
+  size=size||34;var px=size+'px';
+  var proxied=proxyAvatar(avatarUrl);
+  var initial=esc((name||'?').slice(0,1));
+  var fb='<div style="width:'+px+';height:'+px+';border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;flex-shrink:0">'+initial+'</div>';
+  if(proxied)return '<img src="'+esc(proxied)+'" style="width:'+px+';height:'+px+';border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.style.display=\'none\'">';
+  return fb;
+}
 function genReceiptNo(){var n=new Date();return 'RC-'+n.getFullYear()+String(n.getMonth()+1).padStart(2,'0')+String(n.getDate()).padStart(2,'0')+'-'+String(Math.floor(Math.random()*9000)+1000);}
 function todayStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function getRate(tid,svcId){var r=(T_SVC_RATES[tid]||{})[svcId];if(r!=null)return r;var t=THERAPISTS.find(function(x){return x.id===tid;});return t?t.rate:0;}
@@ -1147,19 +1161,6 @@ function tagChips(ph){
 }
 function ptVisits(key){return BOOKINGS.filter(function(b){return b.phone===key&&b.status==='completed';}).length;}
 function ptLast(key){var ds=BOOKINGS.filter(function(b){return b.phone===key;}).map(function(b){return b.date;}).sort();return ds.length?ds[ds.length-1]:'-';}
-function proxyAvatar(url){
-  if(!url)return '';
-  if(RENDER_URL&&(url.indexOf('profile.line-scdn.net')>-1||url.indexOf('sprofile.line-scdn.net')>-1))
-    return RENDER_URL+'/proxy-image?url='+encodeURIComponent(url);
-  return url;
-}
-function avatarEl(name,avatarUrl,size){
-  size=size||34;var px=size+'px';
-  var proxied=proxyAvatar(avatarUrl);
-  var fb='<div style="width:'+px+';height:'+px+';border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;flex-shrink:0">'+esc((name||'?').slice(0,1))+'</div>';
-  if(proxied)return '<img src="'+esc(proxied)+'" style="width:'+px+';height:'+px+';border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.parentNode.replaceChild((function(){var d=document.createElement(\'div\');d.style.cssText=\'width:'+px+';height:'+px+';border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;flex-shrink:0\';d.textContent=\''+esc((name||'?').slice(0,1))+'\';return d;})(),this)">';
-  return fb;
-}
 views.patients=function(){
   var rows=PATIENTS.map(function(p){
     var key=ptKey(p);
