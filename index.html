@@ -1096,6 +1096,7 @@ function setCoPay(p){
     if(amt)amt.textContent=fmtNT(_coSvcPrice);
     if(note)note.style.display='none';
   }
+  updateCoTotal();
 }
 function doCheckout(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
@@ -1112,7 +1113,7 @@ function doCheckout(id){
     var pkgFinal=Math.max(0,pkg.unitPrice-disc);
     b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;
     PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote});
-    closeModal();renderCal();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));
+    closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));
     return;
   }
   if(_coPay==='transfer'){
@@ -1150,7 +1151,7 @@ function doCheckout(id){
   var idn=rc?(p.idNum||it.idNum||''):'';
   closeModal();renderCal();
   if(rc){var bb=b;setTimeout(function(){showReceipt(bb,name,dob,idn);},250);showToast('結帳完成，收據已開立');}
-  else showToast('結帳完成 '+fmtNT(svcOf(b.svc).price));
+  else showToast('結帳完成 '+fmtNT(b.paidAmount!=null?b.paidAmount:svcOf(b.svc).price));
   saveAll();
 }
 function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" style="width:76px;height:76px;object-fit:contain">';return '<svg width="90" height="60" viewBox="0 0 120 80" style="opacity:.85"><ellipse cx="60" cy="40" rx="56" ry="36" fill="none" stroke="#c0392b" stroke-width="3"/><ellipse cx="60" cy="40" rx="50" ry="30" fill="none" stroke="#c0392b" stroke-width="1"/><text x="60" y="48" text-anchor="middle" fill="#c0392b" font-size="22" font-weight="900" letter-spacing="2">收據章</text></svg>';}
@@ -1664,6 +1665,7 @@ function reprintReceipt(bookingId){
   var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});
   if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate};else{showToast('找不到記錄');return;}}
   var p=getPatient(b.phone)||{};
+  if(pay&&b.paidAmount==null)b.paidAmount=pay.amount;
   showReceipt(b,b.name,p.dob||'',p.idNum||'');
 }
 function voidPayment(pid){
