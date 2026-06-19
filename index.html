@@ -557,7 +557,7 @@ function triggerGoogleLogin(){
   /* 未設定 Client ID：直接進入預覽模式 */
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){
     currentUser={email:'preview@navigator.com',name:'預覽模式',avatar:'',role:'admin',therapistId:'Sky',pages:ROLE_PAGES['admin']};
-    go('dashboard');return;
+    loadFromServer(function(){go('dashboard');});return;
   }
   setLoading(true);
   function finishLogin(token,expIn){
@@ -575,9 +575,8 @@ function triggerGoogleLogin(){
         gmailToken=token;
         gcalTokenExp=Date.now()+(Number(expIn||3600)-60)*1000;
         gcalConsented=true;
-        setLoading(false);
         currentUser={email:email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
-        go('dashboard');
+        loadFromServer(function(){setLoading(false);go('dashboard');});
       }).catch(function(){setLoading(false);showLoginError('無法取得帳號資訊，請再試一次');});
   }
   function initAndLogin(){
@@ -2290,28 +2289,33 @@ function iSubmit(){
 }
 function resetIntake(){_iStep=1;_iData={};_iGender='';document.getElementById('frame').innerHTML=views.intake();}
 
-/* ============ localStorage 持久化 ============ */
-var STORAGE_KEY='navicare_v1';
+/* ============ 伺服器資料持久化 ============ */
 function saveAll(){
-  try{
-    var snap={
-      SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,
-      BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,
-      PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,
-      SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,
-      PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,
-      PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,
-      EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,
-      CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO
-    };
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(snap));
-  }catch(e){console.warn('localStorage 儲存失敗',e.message);}
+  /* 未登入（病患端）或無伺服器時不存 */
+  if(!RENDER_URL||!currentUser)return;
+  var snap={
+    SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,
+    BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,
+    PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,
+    SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,
+    PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,
+    PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,
+    EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,
+    CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO
+  };
+  fetch(RENDER_URL+'/clinic-data',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(snap)
+  }).catch(function(e){console.warn('saveAll 失敗',e.message);});
 }
-function loadAll(){
-  try{
-    var raw=localStorage.getItem(STORAGE_KEY);
-    if(!raw)return;
-    var s=JSON.parse(raw);
+function loadFromServer(cb){
+  if(!RENDER_URL){if(cb)cb();return;}
+  fetch(RENDER_URL+'/clinic-data').then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(s){
+    if(!s){if(cb)cb();return;}
     if(s.SERVICES){SERVICES.length=0;s.SERVICES.forEach(function(x){SERVICES.push(x);});}
     if(s.THERAPISTS)THERAPISTS=s.THERAPISTS;
     if(s.TC)Object.assign(TC,s.TC);
@@ -2342,10 +2346,9 @@ function loadAll(){
     if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
     if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;
     SVC_ID=SERVICES.length?Math.max.apply(null,SERVICES.map(function(x){return parseInt(x.id)||100;}))+1:100;
-  }catch(e){console.warn('localStorage 讀取失敗',e.message);}
+    if(cb)cb();
+  }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
 }
-/* 頁面載入時先讀回資料 */
-loadAll();
 
 /* ============ 路由 ============ */
 function go(v){
