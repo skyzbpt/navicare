@@ -714,7 +714,7 @@ function sidebar(active){
   var report=it('analytics','營運分析')+it('payments','消費記錄')+it('payroll','員工薪資')+it('stamptax','印花稅')+it('retention','客戶回流');
   var setting=it('education','衛教內容')+it('schedule','排班設定')+it('packages','課程設定')+it('receipt','收據樣式')+it('clinic','診所管理');
   return '<aside class="sidebar">'+
-    '<div class="brand"><div class="ic" style="'+(LOGIN_LOGO?'background:transparent;':'')+'display:flex;align-items:center;justify-content:center">'+brandLogoEl()+'</div>'+
+    '<div class="brand"><label class="ic" title="點擊更換診所 Logo" style="'+(LOGIN_LOGO?'background:transparent;':'')+'display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">'+brandLogoEl()+'<input type="file" accept="image/*" style="display:none" onchange="uploadLoginLogo(this)"></label>'+
     '<div><b>領航物理治療所</b><span>管理後台</span></div></div>'+
     '<nav class="menu">'+
     grp('核心',core)+grp('報表',report)+grp('設定',setting)+
@@ -2078,14 +2078,15 @@ function clearStamp(key){
   else STAMPS[key]='';
   go('receipt');showToast('已移除印章');
 }
+var _curView='dashboard';
 function uploadLoginLogo(input){
   var file=input.files&&input.files[0];if(!file)return;
   if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}
   var reader=new FileReader();
-  reader.onload=function(e){LOGIN_LOGO=e.target.result;go('clinic');showToast('診所 Logo 已上傳');};
+  reader.onload=function(e){LOGIN_LOGO=e.target.result;go(_curView);showToast('診所 Logo 已更換');};
   reader.readAsDataURL(file);
 }
-function clearLoginLogo(){LOGIN_LOGO='';go('clinic');showToast('已移除診所 Logo');}
+function clearLoginLogo(){LOGIN_LOGO='';go(_curView);showToast('已移除診所 Logo');}
 function uploadLogo(input){
   var file=input.files&&input.files[0];if(!file)return;
   if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}
@@ -2496,6 +2497,7 @@ function go(v){
     document.getElementById('frame').innerHTML='<div style="padding:40px;text-align:center;color:var(--danger)">頁面載入失敗：'+esc(e.message)+'<br><button class="btn gray" style="margin-top:14px" onclick="go(\''+v+'\')">重試</button></div>';
   }
   document.querySelectorAll('.sw').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
+  _curView=v;
   if(v==='bookings')calToday();
   if(v==='book')ensureCatalogForPublic('book');
 }
