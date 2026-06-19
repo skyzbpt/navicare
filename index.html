@@ -2110,10 +2110,6 @@ views.clinic=function(){
     '<div class="field"><label>行事曆 ID</label><input id="ci-calendarId" value="'+esc(CLINIC_INFO.calendarId||'primary')+'" style="font-family:monospace"></div>'+
     '<div class="row" style="gap:8px"><button class="btn" onclick="saveCalendarId()">儲存行事曆 ID</button><button class="btn ghost" onclick="pickGCalendar()">從清單選擇</button><button class="btn gray" onclick="testGCalConnection()">測試連線</button></div>'+
     '</div></div>'+
-    '<div class="card"><div class="card-head"><h3>線上預約設定</h3></div><div class="card-body">'+
-    '<div class="banner info"><span>i</span><div>讓病患在自己手機上的線上預約頁能看到正確的服務與治療師：每次調整服務項目、治療師或班表後，按一次「發布」把目前設定同步到線上預約（不含薪資）。</div></div>'+
-    '<button class="btn" onclick="publishCatalog()">發布服務／治療師到線上預約</button>'+
-    '</div></div>'+
     '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div></div>'+
     '<div class="card"><div class="card-head"><h3>服務項目</h3><button class="btn sm" onclick="addSvcModal()">+ 新增服務</button></div><div class="card-body flush"><table><thead><tr><th>項目</th><th>時長</th><th>費用</th><th>說明</th><th></th></tr></thead><tbody>'+sRows+'</tbody></table>'+(SERVICES.length?'':'<div class="empty">尚無服務項目，點右上角「新增服務」建立。</div>')+'</div></div>');
 };
