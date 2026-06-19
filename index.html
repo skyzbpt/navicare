@@ -838,16 +838,19 @@ function searchBkPatient(q){
   var hits=PATIENTS.filter(function(p){return (p.name||'').toLowerCase().indexOf(q)>-1||(p.phone||'').toLowerCase().indexOf(q)>-1;}).slice(0,6);
   if(!hits.length){box.innerHTML='<div style="font-size:12px;color:var(--slate);padding:6px 4px">查無此病患，可直接於下方填寫新增</div>';return;}
   box.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden">'+hits.map(function(p){
-    return '<div onclick="pickBkPatient(\''+esc(p.phone)+'\')" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'\'"><div><span style="font-weight:700;font-size:13px">'+esc(p.name)+'</span> <span style="font-size:11px;color:var(--slate)">'+esc(p.phone)+'</span></div>'+(p.lineId?'<span class="tag green" style="background:#06C75522;color:#06C755">LINE</span>':'')+'</div>';
+    var key=ptKey(p);
+    var phoneTxt=p.phone?esc(p.phone):'待補電話';
+    return '<div onclick="pickBkPatient(\''+esc(key)+'\')" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'\'"><div><span style="font-weight:700;font-size:13px">'+esc(p.name)+'</span> <span style="font-size:11px;color:var(--slate)">'+phoneTxt+'</span></div>'+(p.lineId?'<span class="tag green" style="background:#06C75522;color:#06C755">LINE</span>':'')+'</div>';
   }).join('')+'</div>';
 }
-function pickBkPatient(ph){
-  var p=getPatient(ph);if(!p)return;
+function pickBkPatient(key){
+  var p=getPatient(key);if(!p)return;
   document.getElementById('nb-name').value=p.name||'';
   document.getElementById('nb-phone').value=p.phone||'';
   document.getElementById('nb-results').innerHTML='';
-  document.getElementById('nb-search').value=p.name+' '+(p.lineId?'(已綁 LINE)':'(未綁 LINE)');
-  showToast('已帶入 '+p.name);
+  document.getElementById('nb-search').value=p.name+' '+(p.lineId?'(已綁 LINE)':'');
+  if(!p.phone)showToast('已帶入 '+p.name+'，此客戶尚未填電話，請補填');
+  else showToast('已帶入 '+p.name);
 }
 function submitBk(){
   var name=document.getElementById('nb-name').value.trim();
@@ -909,14 +912,19 @@ function pickBkStatus(id,s){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
   var prev=b.status;
   b.status=s;
-  /* 取消時自動推播 LINE */
+  /* 取消時自動推播 LINE，並從 Google 行事曆移除 */
   if(s==='cancelled'&&prev!=='cancelled'){
+    if(b.gcalEventId){var evt=b.gcalEventId;b.gcalEventId=null;gcalDelete(evt);}
     var p=getPatient(b.phone);
     if(p&&p.lineId){
       sendLineMsg(p.lineId,lineTemplates(b).cancel,function(){if(BK_LOG[id])BK_LOG[id].push(new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)+' LINE 取消通知已送出');});
     }else{
       showToast('已取消（病患未綁定 LINE，未推播）');
     }
+  }
+  /* 從取消恢復成其他狀態時，重新同步回行事曆 */
+  else if(prev==='cancelled'&&s!=='cancelled'){
+    syncOne(id);
   }
 }
 function saveBk(id){
@@ -938,7 +946,14 @@ function saveBk(id){
 function delBk(id){
   modal('<div class="modal-head" style="background:var(--danger)">刪除預約<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此預約？</div></div><div class="modal-foot"><button class="btn gray" onclick="bkDetail('+id+')">取消</button><button class="btn danger" onclick="confirmDelBk('+id+')">確定刪除</button></div>');
 }
-function confirmDelBk(id){var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);closeModal();renderCal();showToast('已刪除');}
+function confirmDelBk(id){
+  var b=BOOKINGS.find(function(x){return x.id===id;});
+  var evtId=b&&b.gcalEventId;
+  var i=BOOKINGS.findIndex(function(x){return x.id===id;});
+  if(i>-1)BOOKINGS.splice(i,1);
+  closeModal();renderCal();showToast('已刪除');
+  if(evtId)gcalDelete(evtId);
+}
 
 /* 結帳 / 收據 */
 var _coPay='cash';
@@ -1117,6 +1132,20 @@ function syncOne(id){
   ensureGCal(function(){
     gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');})
       .catch(function(e){showToast('同步失敗：'+e.message);});
+  });
+}
+/* 刪除 Google 行事曆上的對應事件 */
+function gcalDelete(eventId,cb){
+  if(!eventId){if(cb)cb();return;}
+  ensureGCal(function(){
+    fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId()+'/events/'+eventId,{
+      method:'DELETE',
+      headers:{'Authorization':'Bearer '+gcalToken}
+    }).then(function(res){
+      if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除');}
+      else{showToast('行事曆移除失敗 HTTP '+res.status);}
+      if(cb)cb();
+    }).catch(function(){if(cb)cb();});
   });
 }
 function syncAllGCal(){
