@@ -1121,20 +1121,21 @@ function stampOwner(){
 }
 function buildNameSeal(nm,w,h){
   var n=nm.length;
-  /* 字數越多字型越小，維持單行；最大 22px，最小 11px */
-  var fs=Math.max(11,Math.min(22,Math.floor((w-14)/(Math.max(n,1)*0.72))));
-  var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.38)+'" text-anchor="middle" fill="#fff" '+
-    'font-size="'+fs+'" font-weight="900" letter-spacing="1" '+
+  /* 字數越多字型越小，維持單行；依長方形寬度自適應 */
+  var fs=Math.max(12,Math.min(24,Math.floor((w-16)/(Math.max(n,1)*1.02))));
+  /* 長方形紅框、白底、紅字 */
+  var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.36)+'" text-anchor="middle" fill="#c0392b" '+
+    'font-size="'+fs+'" font-weight="900" letter-spacing="2" '+
     'font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';
   return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0">'+
-    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="6" fill="#fff" stroke="#c0392b" stroke-width="2.5"/>'+
-    '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="4" fill="none" stroke="#c0392b" stroke-width="1"/>'+
+    '<rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="3" fill="#fff" stroke="#c0392b" stroke-width="2.5"/>'+
+    '<rect x="5" y="5" width="'+(w-10)+'" height="'+(h-10)+'" rx="2" fill="none" stroke="#c0392b" stroke-width="1"/>'+
     tx+'</svg>';
 }
 function stampT(tid){
-  if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:60px;height:60px;object-fit:contain">';
+  if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:96px;height:54px;object-fit:contain">';
   var nm=tName(tid).replace('物理治療師','').replace('治療師','').trim()||tid;
-  return buildNameSeal(nm,60,60);
+  return buildNameSeal(nm,96,54);
 }
 function receiptHTML(b,name,dob,idn){
   var sv=svcOf(b.svc);var pay={cash:'現金',transfer:'匯款',card:'刷卡'}[b.pay]||'現金';
