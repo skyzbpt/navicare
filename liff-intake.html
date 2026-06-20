@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>領航物理治療所 初診問卷</title>
+<script src="https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js"></script>
+<style>
+:root{
+  --navy:#1a4d68;--navy-l:#eef4f7;
+  --mint:#2DC8A0;--mint-d:#1f9e7e;--mint-l:#edfaf6;
+  --slate:#6b8a9c;--mist:#dce6ec;--line:#eef3f6;--bg:#f6fafb;
+  --warn:#e0992a;--danger:#e05c5c;--ink:#1f3a47;
+  --r:14px;--r-sm:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',-apple-system,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.65;min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
+::placeholder{color:#a8bcc8}
+
+/* ── 頂部 ── */
+.top-bar{background:linear-gradient(135deg,var(--navy),var(--mint));color:#fff;padding:20px 20px 16px;text-align:center}
+.top-bar h1{font-size:18px;font-weight:700;margin-bottom:2px}
+.top-bar p{font-size:12px;opacity:.88}
+
+/* ── 步驟條 ── */
+.step-bar{display:flex;gap:5px;padding:14px 20px 0}
+.step-bar .s{flex:1;height:5px;border-radius:3px;background:var(--mist);transition:.3s}
+.step-bar .s.done{background:var(--mint)}
+.step-bar .s.cur{background:var(--navy)}
+
+/* ── 步驟標籤 ── */
+.step-labels{display:flex;padding:6px 20px 0;justify-content:space-between}
+.step-labels span{flex:1;text-align:center;font-size:10px;color:var(--slate)}
+.step-labels span.active{color:var(--navy);font-weight:700}
+
+/* ── 卡片 ── */
+.card{background:#fff;border-radius:var(--r);margin:14px 16px;box-shadow:0 2px 10px rgba(26,77,104,.07);overflow:hidden}
+.card-head{padding:14px 18px 10px;border-bottom:1px solid var(--line)}
+.card-head h2{font-size:15px;color:var(--navy)}
+.card-body{padding:18px}
+
+/* ── 表單元件 ── */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;font-weight:700;color:var(--slate);margin-bottom:6px}
+.field input,.field select,.field textarea{
+  width:100%;padding:12px 14px;border:1.5px solid var(--mist);border-radius:10px;
+  outline:none;transition:.15s;background:#fff;font-size:14px
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--mint)}
+.field input[type="date"]{-webkit-appearance:none;appearance:none;height:auto;line-height:1.65}
+.field textarea{resize:vertical;min-height:72px;line-height:1.7}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* ── 性別按鈕 ── */
+.gender-row{display:flex;gap:8px;margin-top:4px}
+.gender-btn{flex:1;padding:11px;border:1.5px solid var(--mist);border-radius:10px;
+  background:#fff;color:var(--slate);font-size:14px;font-weight:600;transition:.15s}
+.gender-btn.sel{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* ── 部位按鈕 ── */
+.bp-grid{display:flex;flex-wrap:wrap;gap:7px}
+.bp-btn{padding:8px 13px;border-radius:8px;border:1.5px solid var(--mist);
+  background:#fff;font-size:13px;font-weight:600;cursor:pointer;color:var(--slate);transition:.12s}
+.bp-btn.sel{background:var(--mint);border-color:var(--mint);color:#fff}
+
+/* ── VAS ── */
+.vas-grid{display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+.vas-btn{min-width:34px;height:38px;border-radius:8px;border:2px solid var(--mist);
+  background:#fff;font-size:14px;font-weight:700;cursor:pointer;color:var(--slate);
+  flex-shrink:0;transition:.12s}
+.vas-btn.sel{color:#fff;transform:scale(1.08)}
+.vas-cur{font-size:12px;color:var(--slate);margin-top:8px;text-align:center}
+
+/* ── 同意書 ── */
+.consent-box{background:#fafbfc;border:1px solid var(--line);border-radius:10px;
+  padding:14px;height:220px;overflow-y:auto;font-size:12px;line-height:2;white-space:pre-wrap;margin-bottom:14px}
+
+/* ── 按鈕 ── */
+.btn{padding:13px 20px;border-radius:10px;font-size:15px;font-weight:700;transition:.15s;width:100%}
+.btn.primary{background:var(--mint);color:#fff}
+.btn.primary:active{background:var(--mint-d)}
+.btn.gray{background:var(--navy-l);color:var(--navy)}
+.btn.gray:active{background:var(--mist)}
+.btn-row{display:flex;gap:8px;margin-top:6px}
+.btn-row .btn.gray{flex:0 0 90px;width:90px}
+.btn-row .btn.primary{flex:1}
+
+/* ── LINE profile ── */
+.line-profile{display:flex;align-items:center;gap:12px;background:var(--mint-l);
+  border:1px solid #b2f0d8;border-radius:12px;padding:12px 14px;margin-bottom:16px}
+.line-profile img{width:46px;height:46px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.line-profile .info b{font-size:14px;display:block}
+.line-profile .info span{font-size:11px;color:var(--mint-d)}
+
+/* ── 載入畫面 ── */
+.loading{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--slate)}
+.spinner{width:40px;height:40px;border:3px solid var(--mist);border-top-color:var(--mint);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── 完成畫面 ── */
+.done-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.done-card{background:#fff;border-radius:var(--r);padding:36px 28px;text-align:center;box-shadow:0 4px 24px rgba(26,77,104,.1);max-width:340px;width:100%}
+.done-icon{font-size:52px;margin-bottom:16px}
+.done-card h2{font-size:20px;margin-bottom:8px}
+.done-card p{color:var(--slate);font-size:13px;line-height:1.8}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--navy);color:#fff;padding:11px 22px;border-radius:999px;font-size:13px;
+  font-weight:600;z-index:999;opacity:0;pointer-events:none;transition:.25s;white-space:nowrap;
+  box-shadow:0 4px 16px rgba(26,77,104,.18)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div id="loading" class="loading">
+  <div class="spinner"></div>
+  <div>LINE 驗證中…</div>
+</div>
+
+<div id="app" style="display:none"></div>
+
+<div id="toast"></div>
+
+<script>
+/* ════════════════ 設定區 ════════════════ */
+var LIFF_ID      = '2010433876-2HSNBpkC';
+var RENDER_URL   = 'https://navicare-5swm.onrender.com'; // 你的 Render 後端
+var BODY_REGIONS = ['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂關節',
+                    '左髖','右髖','左膝','右膝','左踝','右踝','左肘','右肘','左腕','右腕'];
+var CONSENT_TEXT =
+'【服務前言與聲明】\n本所本次處置採「非以疾病為目的」之健康促進模式（如動作評估、紅繩 Neurac 訓練、體能強化、放鬆伸展等）。若需針對特定疾病進行醫療復健，建請先經醫師診斷並開立照會或醫囑，再由本所物理治療師依醫囑執行。\n\n服務條款：\n一、立同意書人應由受服務之個案本人親自簽具；未成年或無法親簽者，得由法定代理人簽具。\n二、服務過程中如有不適，個案應立即反應並要求暫停。\n三、服務項目包含運動按摩、筋膜放鬆與伸展、體能強化、紅繩運動訓練等。\n四、過程中或後可能出現過敏、痠痛、頭暈等情況，立同意書人已知悉並同意。\n五、當日身體不適或服藥者，請先告知物理治療師。\n六、個人資料供本所作為健康促進服務使用。\n七、本所設有錄音錄影設備以維護雙方權益，資料依個資法妥善保存。\n八、本同意書自簽署日起一年內有效。\n\n本人已充分瞭解上述說明並同意，且確認服務提供者皆為領有合格證照之物理治療師。';
+
+/* ════════════════ 狀態 ════════════════ */
+var step = 1;
+var lineProfile = null; // { userId, displayName, pictureUrl }
+var form = { name:'', phone:'', dob:'', idNum:'', gender:'',
+             bodyParts:[], complaint:'', duration:'', vas:0,
+             sigName:'', sigRel:'本人', sigDate:'' };
+var vasVal = 0;
+
+/* ════════════════ 工具 ════════════════ */
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()); }
+function p2(n){ return String(n).padStart(2,'0'); }
+function toast(msg){
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2200);
+}
+function vasColor(v){
+  v=Number(v);
+  if(v===0)return '#22c55e'; if(v<=3)return '#84cc16';
+  if(v<=5)return '#eab308'; if(v<=7)return '#f59e0b';
+  if(v<=8)return '#f97316'; return '#ef4444';
+}
+
+/* ════════════════ LIFF 初始化 ════════════════ */
+liff.init({ liffId: LIFF_ID })
+  .then(function(){
+    if(!liff.isLoggedIn()){
+      liff.login({ redirectUri: window.location.href });
+      return;
+    }
+    return liff.getProfile();
+  })
+  .then(function(profile){
+    if(!profile) return;
+    lineProfile = profile;
+    // 用 LINE 顯示名稱預填姓名欄
+    form.name = profile.displayName || '';
+    form.sigName = profile.displayName || '';
+    showApp();
+  })
+  .catch(function(err){
+    console.error('LIFF init error', err);
+    // 即使 LIFF 失敗也讓使用者繼續填表
+    showApp();
+  });
+
+/* ════════════════ 主畫面渲染 ════════════════ */
+function showApp(){
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  render();
+}
+
+function render(){
+  var app = document.getElementById('app');
+  if(step === 99){ app.innerHTML = donePage(); return; }
+
+  var stepNames = ['基本資料','主訴患處','疼痛強度','告知同意'];
+  var bar = stepNames.map(function(n,i){
+    var cls = i+1 < step ? 'done' : i+1 === step ? 'cur' : '';
+    return '<div class="s '+cls+'"></div>';
+  }).join('');
+  var labels = stepNames.map(function(n,i){
+    return '<span class="'+(i+1===step?'active':'')+'">'+(i+1)+'</span>';
+  }).join('');
+
+  var body = '';
+  if(step===1) body = step1();
+  else if(step===2) body = step2();
+  else if(step===3) body = step3();
+  else if(step===4) body = step4();
+
+  app.innerHTML =
+    '<div class="top-bar"><h1>領航物理治療所</h1><p>初診問卷 · 步驟 '+step+' / 4</p></div>'+
+    '<div class="step-bar">'+bar+'</div>'+
+    '<div class="step-labels">'+labels+'</div>'+
+    body;
+
+  // 恢復勾選狀態
+  if(step===2) restoreBp();
+  if(step===3) restoreVas();
+}
+
+/* ── 步驟 1：基本資料 ── */
+function step1(){
+  var profileBlock = lineProfile ?
+    '<div class="line-profile">'+
+    (lineProfile.pictureUrl?'<img src="'+esc(lineProfile.pictureUrl)+'" alt="">':'')+
+    '<div class="info"><b>'+esc(lineProfile.displayName)+'</b><span>已透過 LINE 驗證身分</span></div></div>' : '';
+
+  return '<div class="card">'+
+    '<div class="card-head"><h2>基本資料</h2></div>'+
+    '<div class="card-body">'+
+    profileBlock+
+    '<div class="field"><label>姓名 *</label><input id="f-name" value="'+esc(form.name)+'" placeholder="請輸入真實姓名"></div>'+
+    '<div class="grid2">'+
+      '<div class="field"><label>電話 *</label><input id="f-phone" type="tel" value="'+esc(form.phone)+'" placeholder="09xx-xxx-xxx"></div>'+
+      '<div class="field"><label>出生年月日 *</label><input id="f-dob" type="date" min="1900-01-01" max="'+todayStr()+'" value="'+esc(form.dob)+'"></div>'+
+    '</div>'+
+    '<div class="field"><label>身分證字號 *</label><input id="f-id" value="'+esc(form.idNum)+'" placeholder="A123456789" style="font-family:monospace;letter-spacing:1px" oninput="this.value=this.value.toUpperCase()"></div>'+
+    '<div class="field"><label>性別 *</label>'+
+      '<div class="gender-row">'+
+        '<button class="gender-btn'+(form.gender==='male'?' sel':'')+'" onclick="setGender(\'male\')">男</button>'+
+        '<button class="gender-btn'+(form.gender==='female'?' sel':'')+'" onclick="setGender(\'female\')">女</button>'+
+      '</div>'+
+    '</div>'+
+    '<button class="btn primary" onclick="next1()">下一步 →</button>'+
+    '</div></div>';
+}
+function setGender(g){
+  form.gender = g;
+  document.querySelectorAll('.gender-btn').forEach(function(b){ b.classList.remove('sel'); });
+  event.target.classList.add('sel');
+}
+function next1(){
+  form.name   = (document.getElementById('f-name').value||'').trim();
+  form.phone  = (document.getElementById('f-phone').value||'').trim();
+  form.dob    = document.getElementById('f-dob').value;
+  form.idNum  = (document.getElementById('f-id').value||'').trim();
+  if(!form.name){ toast('請填寫姓名'); return; }
+  if(!form.phone){ toast('請填寫電話'); return; }
+  if(!form.dob){ toast('請選擇出生年月日'); return; }
+  if(!form.idNum){ toast('請填寫身分證字號'); return; }
+  if(!form.gender){ toast('請選擇性別'); return; }
+  step=2; render();
+}
+
+/* ── 步驟 2：主訴與患處 ── */
+function step2(){
+  var bpBtns = BODY_REGIONS.map(function(r){
+    var sel = form.bodyParts.indexOf(r) > -1;
+    return '<button class="bp-btn'+(sel?' sel':'')+'" data-r="'+esc(r)+'" onclick="toggleBp(this)">'+esc(r)+'</button>';
+  }).join('');
+  return '<div class="card">'+
+    '<div class="card-head"><h2>主訴與患處</h2></div>'+
+    '<div class="card-body">'+
+    '<div class="field"><label>疼痛 / 不適部位 *（可複選）</label>'+
+      '<div class="bp-grid" id="bp-grid">'+bpBtns+'</div>'+
+    '</div>'+
+    '<div class="field"><label>主要問題描述 *</label>'+
+      '<textarea id="f-complaint" placeholder="例：右側下背痛，久坐後加劇，放射至右腿">'+esc(form.complaint)+'</textarea>'+
+    '</div>'+
+    '<div class="field"><label>持續時間</label>'+
+      '<input id="f-duration" value="'+esc(form.duration)+'" placeholder="例：三個月、半年">'+
+    '</div>'+
+    '<div class="btn-row">'+
+      '<button class="btn gray" onclick="back(1)">← 上一步</button>'+
+      '<button class="btn primary" onclick="next2()">下一步 →</button>'+
+    '</div>'+
+    '</div></div>';
+}
+function restoreBp(){/* 按鈕已在 render 時透過 form.bodyParts 設好 */}
+function toggleBp(btn){
+  var r = btn.dataset.r;
+  var i = form.bodyParts.indexOf(r);
+  if(i > -1){ form.bodyParts.splice(i,1); btn.classList.remove('sel'); }
+  else{ form.bodyParts.push(r); btn.classList.add('sel'); }
+}
+function next2(){
+  form.complaint = (document.getElementById('f-complaint').value||'').trim();
+  form.duration  = (document.getElementById('f-duration').value||'').trim();
+  if(!form.bodyParts.length){ toast('請點選疼痛部位'); return; }
+  if(!form.complaint){ toast('請描述主訴'); return; }
+  step=3; render();
+}
+
+/* ── 步驟 3：VAS 疼痛強度 ── */
+function step3(){
+  var btns = '';
+  for(var i=0;i<=10;i++){
+    var sel = vasVal===i;
+    var c   = vasColor(i);
+    btns += '<button class="vas-btn'+(sel?' sel':'')+'" data-v="'+i+'" '+
+      'style="'+(sel?'background:'+c+';border-color:'+c+';color:#fff;':'color:'+c+';border-color:'+c+'20;')+'" '+
+      'onclick="pickVas('+i+')">'+i+'</button>';
+  }
+  return '<div class="card">'+
+    '<div class="card-head"><h2>疼痛強度（VAS 0–10）</h2></div>'+
+    '<div class="card-body">'+
+    '<p style="font-size:12px;color:var(--slate);margin-bottom:14px">0 = 完全不痛　5 = 中度疼痛　10 = 無法忍受的最痛</p>'+
+    '<div class="vas-grid" id="vas-grid">'+btns+'</div>'+
+    '<div class="vas-cur" id="vas-cur">目前：<b>'+vasVal+'</b> 分</div>'+
+    '<div class="btn-row" style="margin-top:20px">'+
+      '<button class="btn gray" onclick="back(2)">← 上一步</button>'+
+      '<button class="btn primary" onclick="next3()">下一步 →</button>'+
+    '</div>'+
+    '</div></div>';
+}
+function restoreVas(){ /* 已在 render 時透過 vasVal 設好 */ }
+function pickVas(v){
+  vasVal = v; form.vas = v;
+  document.querySelectorAll('.vas-btn').forEach(function(b){
+    var bv = Number(b.dataset.v); var sel = bv===v; var c = vasColor(bv);
+    b.classList.toggle('sel',sel);
+    b.style.background    = sel ? c : '';
+    b.style.borderColor   = sel ? c : c+'20';
+    b.style.color         = sel ? '#fff' : c;
+  });
+  var cur = document.getElementById('vas-cur');
+  if(cur) cur.innerHTML = '目前：<b>'+v+'</b> 分';
+}
+function next3(){ step=4; render(); }
+
+/* ── 步驟 4：告知同意 ── */
+function step4(){
+  return '<div class="card">'+
+    '<div class="card-head"><h2>告知同意書</h2></div>'+
+    '<div class="card-body">'+
+    '<div class="consent-box">'+esc(CONSENT_TEXT)+'</div>'+
+    '<div class="grid2">'+
+      '<div class="field"><label>簽名（全名）*</label><input id="f-sig" value="'+esc(form.sigName)+'" placeholder="請輸入全名"></div>'+
+      '<div class="field"><label>與個案關係</label><input id="f-rel" value="'+esc(form.sigRel)+'" placeholder="本人"></div>'+
+    '</div>'+
+    '<div class="field"><label style="color:var(--slate)">簽署日期</label>'+
+      '<div style="font-weight:600;padding:4px 0">'+new Date().toLocaleDateString('zh-TW')+'</div>'+
+    '</div>'+
+    '<div class="btn-row">'+
+      '<button class="btn gray" onclick="back(3)">← 上一步</button>'+
+      '<button class="btn primary" id="submitBtn" onclick="submitForm()">確認送出</button>'+
+    '</div>'+
+    '</div></div>';
+}
+
+/* ── 完成頁 ── */
+function donePage(){
+  return '<div class="done-wrap">'+
+    '<div class="done-card">'+
+    '<div class="done-icon">✅</div>'+
+    '<h2>初診資料已送出</h2>'+
+    '<p style="margin-top:8px">感謝您的填寫！<br>治療師將於就診前確認您的資料。<br><br>如有任何問題歡迎透過 LINE 與我們聯繫。</p>'+
+    '<button class="btn primary" style="margin-top:24px" onclick="liff.closeWindow&&liff.closeWindow()">關閉視窗</button>'+
+    '</div></div>';
+}
+
+/* ── 返回 ── */
+function back(s){ step=s; render(); }
+
+/* ── 送出 ── */
+function submitForm(){
+  form.sigName = (document.getElementById('f-sig').value||'').trim();
+  form.sigRel  = (document.getElementById('f-rel').value||'本人').trim();
+  if(!form.sigName){ toast('請填寫簽名（全名）'); return; }
+  form.sigDate = new Date().toLocaleDateString('zh-TW');
+
+  var btn = document.getElementById('submitBtn');
+  if(btn){ btn.disabled=true; btn.textContent='送出中…'; }
+
+  var payload = {
+    name      : form.name,
+    phone     : form.phone,
+    dob       : form.dob,
+    idNum     : form.idNum,
+    gender    : form.gender,
+    bodyParts : form.bodyParts,
+    complaint : form.complaint,
+    duration  : form.duration,
+    vas       : form.vas,
+    sigName   : form.sigName,
+    sigRel    : form.sigRel,
+    sigDate   : form.sigDate,
+    lineUserId: lineProfile ? lineProfile.userId : '',
+    lineDisplayName: lineProfile ? lineProfile.displayName : '',
+    linePictureUrl : lineProfile ? lineProfile.pictureUrl  : '',
+    submittedAt: new Date().toISOString()
+  };
+
+  fetch(RENDER_URL+'/submit-intake', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(function(r){ return {ok:r.ok, status:r.status}; })
+  .then(function(res){
+    if(res.ok){
+      step=99; render();
+    } else {
+      toast('送出失敗（HTTP '+res.status+'），請再試一次');
+      if(btn){ btn.disabled=false; btn.textContent='確認送出'; }
+    }
+  })
+  .catch(function(e){
+    toast('網路錯誤，請確認連線後再試');
+    if(btn){ btn.disabled=false; btn.textContent='確認送出'; }
+  });
+}
+</script>
+</body>
+</html>
