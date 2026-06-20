@@ -735,14 +735,20 @@ function gcalUpsert(b){
 function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){showToast('同步失敗：'+e.message);});});}
 function syncAllCalendar(){
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  var targets=BOOKINGS.filter(function(b){return b.status!=='cancelled'&&b.date>=todayStr();});
-  if(!targets.length){showToast('沒有可同步的預約（今日含以後、未取消）');return;}
+  var targets=BOOKINGS.filter(function(b){return b.status!=='cancelled';});
+  if(!targets.length){showToast('目前沒有可同步的預約');return;}
+  targets.forEach(function(b){if(b.start==null||isNaN(b.start)){var hm=String(b.time||'00:00').split(':');b.start=Number(hm[0])*60+(Number(hm[1])||0);}});
   ensureGCal(function(){
     showToast('同步行事曆中…（共 '+targets.length+' 筆，請稍候）');
-    var ok=0,fail=0;
+    var ok=0,fail=0,lastErr='';
     function next(i){
-      if(i>=targets.length){saveAll();showToast('行事曆同步完成：成功 '+ok+' 筆'+(fail?'，失敗 '+fail+' 筆':''));return;}
-      gcalUpsert(targets[i]).then(function(){ok++;}).catch(function(){fail++;}).then(function(){next(i+1);});
+      if(i>=targets.length){
+        saveAll();
+        if(fail){showToast('同步完成：成功 '+ok+'，失敗 '+fail+'。最後錯誤：'+lastErr);}
+        else{showToast('行事曆同步完成：成功 '+ok+' 筆 ✓');}
+        return;
+      }
+      gcalUpsert(targets[i]).then(function(){ok++;}).catch(function(e){fail++;lastErr=(e&&e.message)||'未知錯誤';}).then(function(){next(i+1);});
     }
     next(0);
   });
@@ -958,10 +964,10 @@ function doCheckout(id){
   var sv0=svcOf(b.svc);
   if(!sv0||sv0.price===0&&sv0.name==='-'){showToast('找不到對應服務，無法結帳');return;}
   var disc=Math.max(0,Number((document.getElementById('coDiscount')||{}).value)||0);var discNote=((document.getElementById('coDiscountNote')||{}).value||'').trim();
-  if(_coPay==='package'){var pkg=findUsablePkg(pkgKeyForBooking(b),b.svc);if(!pkg){showToast('找不到可使用的課程');return;}pkg.used++;var pkgFinal=Math.max(0,pkg.unitPrice-disc);b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:b.note||''});closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));return;}
+  if(_coPay==='package'){var pkg=findUsablePkg(pkgKeyForBooking(b),b.svc);if(!pkg){showToast('找不到可使用的課程');return;}pkg.used++;var pkgFinal=Math.max(0,pkg.unitPrice-disc);b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:discNote});closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));return;}
   if(_coPay==='transfer'){var last5=(document.getElementById('co-last5').value||'').trim();var tdate=document.getElementById('co-tdate').value;if(last5.length!==5){showToast('請輸入匯款後五碼');return;}if(!tdate){showToast('請選擇匯款日期');return;}b.transferLast5=last5;b.transferDate=tdate;}else{b.transferLast5='';b.transferDate='';}
   var finalAmt=Math.max(0,sv0.price-disc);b.status='completed';b.pay=_coPay;b.paidAmount=finalAmt;
-  PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name,amount:finalAmt,pay:_coPay,transferLast5:b.transferLast5||'',transferDate:b.transferDate||'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:b.note||''});
+  PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name,amount:finalAmt,pay:_coPay,transferLast5:b.transferLast5||'',transferDate:b.transferDate||'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:discNote});
   var rc=document.getElementById('coRc').checked;var p=getPatient(b.phone)||{};var it=INTAKE_DATA[b.phone]||{};
   var dob=rc?(p.dob||it.dob||''):'';var idn=rc?(p.idNum||it.idNum||''):'';
   closeModal();renderCal();
