@@ -319,6 +319,7 @@ var BODY_REGIONS=['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂�
 var PT_PACKAGES={};
 var PT_PKG_ID=5000;
 var RENDER_URL='https://line-webhook-x1ux.onrender.com';
+var _resetDone=false;
 /* 安全性：自動為所有後台 API 請求帶上登入者的 Google 權杖，讓伺服器能驗證身分。
    只影響呼叫 RENDER_URL 的請求；公開端點會忽略此標頭，無害。 */
 (function(){
@@ -575,8 +576,38 @@ views.dashboard=function(){
     '<div class="status-row"><b>90天回流率</b><span class="tag mint">'+ret.rate+'%</span></div>'+
     '<div class="status-row"><b>平均客單價</b><span class="tag mint">'+fmtNT(avg)+'</span></div>'+
     '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(Math.floor(stampBase*0.004))+'</span></div>'+
-    '</div></div></div>'+backupCard());
+    '</div></div></div>'+backupCard()+resetServerCard());
 };
+/* ============ 重置伺服器資料（換版用，需密碼 dogma）============ */
+var RESET_PASSWORD='dogma';
+function resetServerCard(){
+  if(!(currentUser&&currentUser.role==='admin'))return '';
+  var warnIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  return '<div class="card" style="border-color:#f0c0c0"><div class="card-head" style="background:#fdf4f4"><h3 style="color:var(--danger)">重置伺服器資料</h3><span class="tag" style="background:#fdecec;color:var(--danger)">危險操作</span></div><div class="card-body"><div class="banner" style="background:#fdecec;border:1px solid #f5b5b5;color:#b02525"><span>!</span><div><b>此操作會清空伺服器上的全部資料</b>（預約、病患、病歷、消費、設定），並還原成新版 HTML 的內建預設。<b>無法復原</b>，請務必先在上方「下載備份檔」。<br>用途：重新部署最新版前，先清掉舊紀錄，避免登入後被舊資料覆蓋。</div></div><button class="btn danger" onclick="resetServerModal()">'+warnIcon+'重置伺服器資料</button></div></div>';
+}
+function resetServerModal(){
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可執行');return;}
+  modal('<div class="modal-head" style="background:var(--danger)">重置伺服器資料<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner" style="background:#fdecec;border:1px solid #f5b5b5;color:#b02525"><span>!</span><div>確認後將<b>立即清空伺服器上的所有資料</b>並還原成內建預設，<b>無法復原</b>。<br>清空後請<b>直接關閉分頁、重新部署最新版並重新登入</b>，切勿再點任何按鈕（會把空資料寫回，但也可能覆蓋你想保留的東西）。</div></div>'+
+    '<div class="field" style="margin-top:14px"><label>請輸入管理密碼以確認</label><input id="resetPw" type="password" placeholder="輸入密碼" autocomplete="off" onkeydown="if(event.key===\'Enter\')confirmResetServer()"></div>'+
+    '<label class="row" style="font-size:13px;gap:8px;margin-top:4px;color:var(--danger)"><input type="checkbox" id="resetAck" style="width:auto"> 我已下載備份，了解此操作無法復原</label>'+
+    '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmResetServer()">確認清空</button></div>');
+  setTimeout(function(){var el=document.getElementById('resetPw');if(el)el.focus();},100);
+}
+function confirmResetServer(){
+  var pw=(document.getElementById('resetPw')||{}).value||'';
+  var ack=document.getElementById('resetAck')&&document.getElementById('resetAck').checked;
+  if(pw!==RESET_PASSWORD){showToast('密碼錯誤');return;}
+  if(!ack){showToast('請先勾選確認項目');return;}
+  if(!RENDER_URL){showToast('未設定伺服器，無法重置');return;}
+  showToast('清空中…');
+  fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(r){
+    if(r.status===401||r.status===403){showToast('登入已逾時，請重新登入後再試');return;}
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    _resetDone=true;
+    modal('<div class="modal-head" style="background:#22c55e">已清空伺服器資料<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="banner info"><span>i</span><div>伺服器資料已清空為空白。<b>請現在直接關閉這個分頁</b>，重新部署最新版 HTML 後再登入，新版的內建預設就會生效。<br><b>請勿再點畫面上其他按鈕</b>，以免把資料重新寫回伺服器。</div></div></div><div class="modal-foot"><button class="btn" style="background:#22c55e" onclick="closeModal()">我知道了</button></div>');
+  }).catch(function(e){showToast('清空失敗：'+e.message);});
+}
 function uploadLoginLogo(input){var file=input.files&&input.files[0];if(!file)return;if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}var reader=new FileReader();reader.onload=function(e){LOGIN_LOGO=e.target.result;setFavicon();go(_curView);showToast('診所 Logo 已更換');};reader.readAsDataURL(file);}
 function setFavicon(){
   try{
@@ -610,6 +641,7 @@ function go(v){
 var _saveExpiredNotified=false;
 function saveAll(){
   if(!RENDER_URL||!currentUser)return Promise.resolve();
+  if(_resetDone)return Promise.resolve();
   var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE};
   return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).then(function(r){
     if(r.status===401||r.status===403){
