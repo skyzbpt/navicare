@@ -187,6 +187,12 @@ tbody tr:hover{background:var(--bg)}
 .shift-time{padding:8px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none;font-family:inherit;font-size:13px}
 .shift-del{width:30px;height:30px;flex-shrink:0;border:none;border-radius:8px;background:#fdecec;color:var(--danger);font-size:16px;cursor:pointer}
 
+/* 日期欄位空白時顯示提示文字 */
+input[type="date"].date-empty{color:transparent;position:relative}
+input[type="date"].date-empty::before{content:attr(data-ph);color:#a8bcc8;position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none}
+input[type="date"].date-empty:focus{color:var(--ink)}
+input[type="date"].date-empty:focus::before{content:none}
+
 /* packages */
 .pkg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
 .pkg-card{border:1px solid var(--line);border-radius:14px;background:#fff;padding:18px;cursor:pointer;box-shadow:var(--sh);transition:.15s}
@@ -267,10 +273,11 @@ const SERVICES=[];
 let SVC_ID=100;
 
 let THERAPISTS=[
-  {id:'Sky',name:'Sky 物理治療師',title:'物理治療師',base:0,rate:0,workDays:[],license:''}
+  {id:'Sky',name:'張博源',title:'行銷總監 CMO',base:0,rate:0,workDays:[],license:''},
+  {id:'wujs',name:'巫俊杉',title:'院長',base:0,rate:0,workDays:[],license:''}
 ];
-const TC={Sky:'#1a4d68'};
-const TN={Sky:'Sky 物理治療師'};
+const TC={Sky:'#1a4d68',wujs:'#2DC8A0'};
+const TN={Sky:'張博源',wujs:'巫俊杉'};
 const COLORS=['#1a4d68','#2DC8A0','#F59E0B','#8B5CF6','#EC4899','#3b82f6','#06b6d4'];
 
 const ST={
@@ -541,8 +548,8 @@ var gmailToken=null;
 const GOOGLE_CLIENT_ID='488516957607-6pt8ofca357qrj5fgpjk8n67i6krvr4d.apps.googleusercontent.com';
 const EMAIL_WHITELIST={
   'nycuptc@gmail.com':{name:'櫃檯',therapistId:null,role:'admin'},
-  'skyzbpt@gmail.com':{name:'Sky',therapistId:'Sky',role:'admin'},
-  'yewfir@gmail.com':{name:'院長',therapistId:null,role:'admin'}
+  'skyzbpt@gmail.com':{name:'張博源',therapistId:'Sky',role:'admin'},
+  'yewfir@gmail.com':{name:'巫俊杉',therapistId:'wujs',role:'admin'}
 };
 const ROLE_PAGES={
   admin:['dashboard','bookings','patients','soap','analytics','payments','payroll','stamptax','retention','education','schedule','packages','receipt','clinic'],
@@ -625,7 +632,9 @@ function showToast(m){var t=document.getElementById('sToast');t.textContent=m;t.
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function proxyAvatar(url){
   if(!url)return '';
-  if(typeof RENDER_URL!=='undefined'&&RENDER_URL&&(url.indexOf('profile.line-scdn.net')>-1||url.indexOf('sprofile.line-scdn.net')>-1))
+  /* LINE 頭貼會被瀏覽器 CORS/referrer 擋住，改走伺服器代理 */
+  var isLine=/line-scdn\.net|line-apps\.com|line\.me/.test(url);
+  if(typeof RENDER_URL!=='undefined'&&RENDER_URL&&isLine)
     return RENDER_URL+'/proxy-image?url='+encodeURIComponent(url);
   return url;
 }
@@ -633,8 +642,13 @@ function avatarEl(name,avatarUrl,size){
   size=size||34;var px=size+'px';
   var proxied=proxyAvatar(avatarUrl);
   var initial=esc((name||'?').slice(0,1));
-  var fb='<div style="width:'+px+';height:'+px+';border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;flex-shrink:0">'+initial+'</div>';
-  if(proxied)return '<img src="'+esc(proxied)+'" style="width:'+px+';height:'+px+';border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.style.display=\'none\'">';
+  var fontSize=Math.round(size*0.42)+'px';
+  var fb='<div style="width:'+px+';height:'+px+';border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;font-size:'+fontSize+';flex-shrink:0">'+initial+'</div>';
+  if(proxied){
+    /* 圖片載入失敗時，原地換成文字頭像（而非整個消失） */
+    var onerr='this.onerror=null;this.outerHTML=this.getAttribute(\'data-fb\')';
+    return '<img src="'+esc(proxied)+'" data-fb="'+esc(fb).replace(/"/g,'&quot;')+'" style="width:'+px+';height:'+px+';border-radius:50%;object-fit:cover;flex-shrink:0" onerror="'+onerr+'">';
+  }
   return fb;
 }
 function genReceiptNo(){var n=new Date();return 'RC-'+n.getFullYear()+String(n.getMonth()+1).padStart(2,'0')+String(n.getDate()).padStart(2,'0')+'-'+String(Math.floor(Math.random()*9000)+1000);}
@@ -712,7 +726,7 @@ function sidebar(active){
   function grp(label,items){return items?('<div class="menu-group">'+label+'</div>'+items):'';}
   var core=it('dashboard','總覽')+it('bookings','預約管理')+it('patients','病患管理')+it('soap','SOAP 病歷');
   var report=it('analytics','營運分析')+it('payments','消費記錄')+it('payroll','員工薪資')+it('stamptax','印花稅')+it('retention','客戶回流');
-  var setting=it('education','衛教內容')+it('schedule','排班設定')+it('packages','課程設定')+it('receipt','收據樣式')+it('clinic','診所管理');
+  var setting=it('education','衛教內容')+it('schedule','排班設定')+it('packages','服務與課程')+it('receipt','收據樣式')+it('clinic','診所管理');
   return '<aside class="sidebar">'+
     '<div class="brand"><div class="ic" title="點擊更換診所 Logo" onclick="document.getElementById(\'brandLogoInput\').click()" style="'+(LOGIN_LOGO?'background:transparent;':'')+'display:flex;align-items:center;justify-content:center;cursor:pointer">'+brandLogoEl()+'<input type="file" id="brandLogoInput" accept="image/*" style="display:none" onchange="uploadLoginLogo(this)"></div>'+
     '<div><b>領航物理治療所</b><span>管理後台</span></div></div>'+
@@ -1156,11 +1170,10 @@ function doCheckout(id){
 }
 function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" style="width:76px;height:76px;object-fit:contain">';return '<svg width="90" height="60" viewBox="0 0 120 80" style="opacity:.85"><ellipse cx="60" cy="40" rx="56" ry="36" fill="none" stroke="#c0392b" stroke-width="3"/><ellipse cx="60" cy="40" rx="50" ry="30" fill="none" stroke="#c0392b" stroke-width="1"/><text x="60" y="48" text-anchor="middle" fill="#c0392b" font-size="22" font-weight="900" letter-spacing="2">收據章</text></svg>';}
 function stampOwner(){
-  if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:68px;height:68px;object-fit:contain">';
-  return '<svg width="68" height="68" viewBox="0 0 80 80" style="opacity:.85">'+
-    '<rect x="4" y="4" width="72" height="72" rx="5" fill="none" stroke="#c0392b" stroke-width="3"/>'+
-    '<rect x="9" y="9" width="62" height="62" rx="3" fill="none" stroke="#c0392b" stroke-width="1"/>'+
-    '<text x="40" y="47" text-anchor="middle" fill="#c0392b" font-size="20" font-weight="900" letter-spacing="3">印花章</text>'+
+  if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:84px;height:48px;object-fit:contain">';
+  return '<svg width="84" height="48" viewBox="0 0 84 48" style="opacity:.85">'+
+    '<rect x="3" y="3" width="78" height="42" rx="3" fill="none" stroke="#c0392b" stroke-width="2.5"/>'+
+    '<text x="42" y="30" text-anchor="middle" fill="#c0392b" font-size="18" font-weight="900" letter-spacing="3">印花章</text>'+
     '</svg>';
 }
 function buildNameSeal(nm,w,h){
@@ -1182,6 +1195,7 @@ function stampT(tid){
 }
 function receiptHTML(b,name,dob,idn){
   var sv=svcOf(b.svc);var pay={cash:'現金',transfer:'匯款',card:'刷卡'}[b.pay]||'現金';
+  var shown=(b.paidAmount!=null?b.paidAmount:sv.price);
   var headLogo=CLINIC_LOGO?'<img src="'+CLINIC_LOGO+'" style="max-width:220px;max-height:70px;object-fit:contain;margin:0 auto 4px;display:block">':'<div class="rc-clinic">'+esc(CLINIC_INFO.name)+'</div>';
   return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+genReceiptNo()+'</div></div>'+
     '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+dob+'</span></div>':'')+(idn?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+esc(idn)+'</span></div>':'')+'</div>'+
@@ -1546,6 +1560,67 @@ function addTag(ph){var n=document.getElementById('ntName').value.trim();if(!n)r
 function delTag(tid,ph){var i=ALL_PT_TAGS.findIndex(function(t){return t.id===tid;});if(i>-1)ALL_PT_TAGS.splice(i,1);delete PT_TAG_MAP[tid];Object.keys(PT_TAG_DATA).forEach(function(k){var a=PT_TAG_DATA[k];var j=a.indexOf(tid);if(j>-1)a.splice(j,1);});renderTagList(ph);}
 
 /* ============ SOAP 病歷 ============ */
+/* ROM / 肌力 各關節記錄（平時收折） */
+var ROM_JOINTS=['頸椎','肩關節','肘關節','腕關節','胸腰椎','髖關節','膝關節','踝關節'];
+var MMT_GRADES=['','0','1','2','3','3+','4-','4','4+','5'];
+var romOpen={};
+function toggleRom(id){
+  romOpen[id]=!romOpen[id];
+  var b=document.getElementById('rombody-'+id);if(b)b.style.display=romOpen[id]?'block':'none';
+  var c=document.getElementById('romchev-'+id);if(c)c.style.transform=romOpen[id]?'':'rotate(-90deg)';
+}
+function romRowHTML(id,i,row){
+  row=row||{};
+  var jOpts=ROM_JOINTS.map(function(j){return '<option'+(row.joint===j?' selected':'')+'>'+j+'</option>';}).join('');
+  var sideOpts=['左','右','雙'].map(function(s){return '<option'+(row.side===s?' selected':'')+'>'+s+'</option>';}).join('');
+  var mmtOpts=MMT_GRADES.map(function(g){return '<option value="'+g+'"'+(row.mmt===g?' selected':'')+'>'+(g||'-')+'</option>';}).join('');
+  return '<div class="rom-row" data-i="'+i+'" style="display:grid;grid-template-columns:1.1fr .7fr 1.4fr .9fr 28px;gap:6px;margin-bottom:6px;align-items:center">'+
+    '<select class="rom-joint" style="padding:7px 6px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px">'+jOpts+'</select>'+
+    '<select class="rom-side" style="padding:7px 6px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px">'+sideOpts+'</select>'+
+    '<input class="rom-rom" value="'+esc(row.rom||'')+'" placeholder="ROM 例 0-120°" style="padding:7px 8px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px">'+
+    '<select class="rom-mmt" style="padding:7px 6px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px" title="徒手肌力 MMT">'+mmtOpts+'</select>'+
+    '<button class="shift-del" onclick="rmRomRow('+id+',this)" style="width:28px;height:28px;font-size:15px">&times;</button>'+
+    '</div>';
+}
+function romBlock(n){
+  var rows=(n.rom&&n.rom.length)?n.rom:[];
+  var open=!!romOpen[n.id];
+  var count=rows.length;
+  var rowsHtml=rows.map(function(r,i){return romRowHTML(n.id,i,r);}).join('');
+  return '<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden">'+
+    '<div onclick="toggleRom('+n.id+')" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 13px;cursor:pointer;background:var(--bg)">'+
+    '<div class="row" style="gap:8px"><span class="chev" id="romchev-'+n.id+'" style="'+(open?'':'transform:rotate(-90deg)')+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mint-d)" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></span>'+
+    '<span style="font-size:12px;font-weight:700;color:var(--mint-d)">ROM / 肌力 各關節記錄</span>'+
+    (count?'<span class="tag mint" style="padding:1px 8px">'+count+' 項</span>':'<span class="t-sub">（點此展開填寫）</span>')+'</div>'+
+    '</div>'+
+    '<div id="rombody-'+n.id+'" style="display:'+(open?'block':'none')+';padding:12px 13px">'+
+    '<div style="display:grid;grid-template-columns:1.1fr .7fr 1.4fr .9fr 28px;gap:6px;margin-bottom:6px;font-size:10px;color:var(--slate);font-weight:700"><span>關節</span><span>側別</span><span>關節活動度 ROM</span><span>肌力 MMT</span><span></span></div>'+
+    '<div id="romrows-'+n.id+'">'+rowsHtml+'</div>'+
+    '<button class="btn sm ghost" onclick="addRomRow('+n.id+')" style="font-size:11px;padding:5px 12px;margin-top:4px">+ 新增關節</button>'+
+    '</div></div>';
+}
+function addRomRow(id){
+  var wrap=document.getElementById('romrows-'+id);if(!wrap)return;
+  var i=wrap.querySelectorAll('.rom-row').length;
+  var div=document.createElement('div');div.innerHTML=romRowHTML(id,i,{});
+  wrap.appendChild(div.firstChild);
+}
+function rmRomRow(id,btn){
+  var row=btn.closest('.rom-row');if(row)row.remove();
+}
+function collectRom(id){
+  var wrap=document.getElementById('romrows-'+id);if(!wrap)return [];
+  var out=[];
+  wrap.querySelectorAll('.rom-row').forEach(function(r){
+    var joint=r.querySelector('.rom-joint').value;
+    var side=r.querySelector('.rom-side').value;
+    var rom=r.querySelector('.rom-rom').value.trim();
+    var mmt=r.querySelector('.rom-mmt').value;
+    if(rom||mmt)out.push({joint:joint,side:side,rom:rom,mmt:mmt});
+  });
+  return out;
+}
+/* ROM / 肌力 各關節記錄（平時收折）END */
 var soapCollapsed={};
 function soapCard(n){
   var c=tColor(n.t);var col=soapCollapsed[n.id];
@@ -1558,15 +1633,68 @@ function soapCard(n){
     '<div class="soap-sec"><div class="soap-sec-head"><span class="badge O">O</span>Objective 客觀評估</div>'+
     '<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px">疼痛強度（VAS 0-10）</div>'+vasHTML('vas-'+n.id,n.vas||0)+'</div>'+
     '<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px">疼痛 / 受評部位</div>'+bpHTML('bp-'+n.id,n.bodyParts||[])+'</div>'+
-    '<textarea id="soap-O-'+n.id+'" placeholder="ROM、肌力、觸診、姿勢評估">'+esc(n.O)+'</textarea></div>'+
+    romBlock(n)+
+    '<textarea id="soap-O-'+n.id+'" placeholder="觸診、姿勢評估、其他客觀觀察">'+esc(n.O)+'</textarea></div>'+
     '<div class="soap-sec"><div class="soap-sec-head"><span class="badge A">A</span>Assessment 臨床評估</div><textarea id="soap-A-'+n.id+'" placeholder="臨床推論、問題清單">'+esc(n.A)+'</textarea></div>'+
     '<div class="soap-sec"><div class="soap-sec-head"><span class="badge P">P</span>Plan 治療計畫</div><textarea id="soap-P-'+n.id+'" placeholder="治療項目、頻率、居家運動、目標">'+esc(n.P)+'</textarea></div>'+
     '<div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveSoap('+n.id+')">儲存病歷</button></div>'+
     '</div></div>';
 }
+var soapFolderT=null; // 目前展開的治療師資料夾
+var soapQuery='';
+function setSoapFolder(tid){soapFolderT=(soapFolderT===tid?null:tid);go('soap');}
+function filterSoap(q){
+  soapQuery=(q||'').toLowerCase();
+  go('soap');
+  /* 保留搜尋框焦點 */
+  var el=document.getElementById('soapq');if(el){el.focus();el.value=q;el.setSelectionRange(q.length,q.length);}
+}
 views.soap=function(){
-  var body=SOAP_NOTES.length?SOAP_NOTES.map(soapCard).join(''):'<div class="empty">尚無病歷，點右上角「新增病歷」建立。</div>';
-  return shell('soap','SOAP 病歷',body,'<button class="btn sm" onclick="addSoapModal()">+ 新增病歷</button>');
+  var q=soapQuery;
+  var notes=SOAP_NOTES.filter(function(n){
+    if(!q)return true;
+    return (n.name||'').toLowerCase().indexOf(q)>-1||(n.phone||'').toLowerCase().indexOf(q)>-1;
+  });
+  var body;
+  if(!SOAP_NOTES.length){
+    body='<div class="empty">尚無病歷，點右上角「新增病歷」建立。</div>';
+  }else{
+    /* 依治療師分資料夾 */
+    var folders=THERAPISTS.map(function(t){
+      var tNotes=notes.filter(function(n){return n.t===t.id;});
+      /* 同治療師下，再依個案分組計數 */
+      var ptSet={};tNotes.forEach(function(n){ptSet[n.phone||n.name]=(ptSet[n.phone||n.name]||0)+1;});
+      var ptCount=Object.keys(ptSet).length;
+      var open=soapFolderT===t.id||!!q; /* 搜尋時全部展開 */
+      var c=tColor(t.id);
+      var head='<div class="day-card" style="margin-bottom:10px;padding:0;overflow:hidden">'+
+        '<div onclick="setSoapFolder(\''+t.id+'\')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;cursor:pointer;background:'+c+'10;border-left:4px solid '+c+'">'+
+        '<div class="row" style="gap:10px"><span class="chev" style="'+(open?'':'transform:rotate(-90deg)')+'"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="'+c+'" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></span>'+
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="'+c+'18" stroke="'+c+'" stroke-width="1.6"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'+
+        '<div><div style="font-weight:700;color:'+c+'">'+esc(t.name)+'</div><div style="font-size:11px;color:var(--slate)">'+ptCount+' 位個案 · '+tNotes.length+' 份病歷</div></div></div>'+
+        '</div>';
+      if(!open||!tNotes.length){
+        if(open&&!tNotes.length)return head+'<div style="padding:14px 18px;color:var(--slate);font-size:12px">'+(q?'查無符合的個案':'此治療師尚無病歷')+'</div></div>';
+        return head+'</div>';
+      }
+      /* 展開：依個案分子資料夾 */
+      var byPt={};
+      tNotes.forEach(function(n){var k=n.phone||n.name;(byPt[k]=byPt[k]||[]).push(n);});
+      var inner=Object.keys(byPt).map(function(k){
+        var arr=byPt[k].sort(function(a,b){return b.date.localeCompare(a.date);});
+        var pname=arr[0].name;
+        var hasVas=arr.some(function(n){return Number(n.vas)>0;});
+        var trendBtn=arr.length>1?'<button class="btn sm ghost" style="margin-left:auto;font-size:11px;padding:4px 10px" onclick="event.stopPropagation();painTrendModal(\''+esc(k)+'\',\''+t.id+'\')">📈 疼痛趨勢</button>':'';
+        return '<div style="border-top:1px solid var(--line)">'+
+          '<div style="padding:10px 18px 6px;font-size:12px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:'+c+'"></span>'+esc(pname)+' <span style="color:var(--slate);font-weight:400">('+arr.length+' 份)</span>'+trendBtn+'</div>'+
+          '<div style="padding:0 12px 8px">'+arr.map(soapCard).join('')+'</div></div>';
+      }).join('');
+      return head+inner+'</div>';
+    }).join('');
+    body=folders;
+  }
+  return shell('soap','SOAP 病歷',body,
+    '<div class="row" style="gap:8px"><div class="search-wrap"><input id="soapq" placeholder="搜尋個案姓名或電話" value="'+esc(soapQuery)+'" oninput="filterSoap(this.value)"><button class="s-clear" onclick="filterSoap(\'\')">&times;</button></div><button class="btn sm" onclick="addSoapModal()">+ 新增病歷</button></div>');
 };
 function toggleSoap(id){
   soapCollapsed[id]=!soapCollapsed[id];
@@ -1581,6 +1709,7 @@ function saveSoap(id){
   n.P=document.getElementById('soap-P-'+id).value;
   n.vas=_vasStore['vas-'+id]!=null?_vasStore['vas-'+id]:(n.vas||0);
   n.bodyParts=bpValues('bp-'+id);
+  n.rom=collectRom(id);
   soapCollapsed[id]=true;
   var b=document.getElementById('sbody-'+id);if(b)b.classList.add('collapsed');
   var c=document.getElementById('chev-'+id);if(c)c.style.transform='rotate(-90deg)';
@@ -1595,7 +1724,20 @@ function addSoapModal(){
   if(!PATIENTS.length){showToast('請先在病患管理新增病患');return;}
   var pOpts=PATIENTS.map(function(p){return '<option value="'+esc(p.phone)+'">'+esc(p.name)+' ('+esc(p.phone)+')</option>';}).join('');
   var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
-  modal('<div class="modal-head" style="background:var(--navy)">新增 SOAP 病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>病患</label><select id="ns-pt">'+pOpts+'</select></div><div class="field"><label>治療師</label><select id="ns-t">'+tOpts+'</select></div><div class="field"><label>就診日期</label><input id="ns-date" type="date" value="'+todayStr()+'"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSoap()">建立</button></div>');
+  modal('<div class="modal-head" style="background:var(--navy)">新增 SOAP 病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+
+    '<div class="field"><label>個案</label><div class="search-wrap" style="width:100%"><input id="ns-search" placeholder="輸入姓名或電話快速篩選" oninput="filterSoapPt(this.value)" style="width:100%"></div></div>'+
+    '<div class="field"><label>選擇個案</label><select id="ns-pt" size="1">'+pOpts+'</select></div>'+
+    '<div class="field"><label>治療師</label><select id="ns-t">'+tOpts+'</select></div>'+
+    '<div class="field"><label>就診日期</label><input id="ns-date" type="date" max="'+todayStr()+'" value="'+todayStr()+'"></div>'+
+    '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSoap()">建立</button></div>');
+  /* 預設帶入目前展開的治療師資料夾 */
+  if(soapFolderT){var tsel=document.getElementById('ns-t');if(tsel)tsel.value=soapFolderT;}
+}
+function filterSoapPt(q){
+  q=(q||'').toLowerCase();
+  var sel=document.getElementById('ns-pt');if(!sel)return;
+  var matches=PATIENTS.filter(function(p){return !q||(p.name||'').toLowerCase().indexOf(q)>-1||(p.phone||'').toLowerCase().indexOf(q)>-1;});
+  sel.innerHTML=matches.map(function(p){return '<option value="'+esc(p.phone)+'">'+esc(p.name)+' ('+esc(p.phone)+')</option>';}).join('')||'<option value="">查無符合個案</option>';
 }
 function submitSoap(){
   var ph=document.getElementById('ns-pt').value;var p=getPatient(ph);
@@ -1605,6 +1747,31 @@ function submitSoap(){
 }
 
 /* ============ 營運分析 ============ */
+/* 各治療師前十名常客（依消費總額排序，含到診次數） */
+function topClientsByTherapist(tid){
+  var map={};
+  PAYMENTS.filter(function(p){return p.t===tid;}).forEach(function(p){
+    var k=p.phone||p.name;
+    if(!map[k])map[k]={name:p.name,phone:p.phone,visits:0,amount:0};
+    map[k].visits++;map[k].amount+=(p.amount||0);
+  });
+  return Object.keys(map).map(function(k){return map[k];})
+    .sort(function(a,b){return b.amount-a.amount||b.visits-a.visits;})
+    .slice(0,10);
+}
+var _topT=null;
+function setTopT(tid){_topT=tid;go('analytics');}
+function topClientsCard(){
+  if(!THERAPISTS.length)return '';
+  var cur=_topT||THERAPISTS[0].id;
+  var pills=THERAPISTS.map(function(t){var sel=t.id===cur;return '<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(t.id)+';border-color:'+tColor(t.id)+';color:#fff;':'')+'" onclick="setTopT(\''+t.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(t.id))+'"></span>'+esc(t.name)+'</button>';}).join('');
+  var top=topClientsByTherapist(cur);
+  var rows=top.length?top.map(function(c,i){
+    var medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+    return '<tr><td style="text-align:center;font-weight:700;width:42px">'+medal+'</td><td><div class="t-name">'+esc(c.name)+'</div>'+(c.phone?'<div class="t-sub">'+esc(c.phone)+'</div>':'')+'</td><td>'+c.visits+' 次</td><td class="num" style="font-weight:700;color:'+tColor(cur)+'">'+fmtNT(c.amount)+'</td></tr>';
+  }).join(''):'<tr><td colspan="4" class="empty">此治療師尚無消費記錄</td></tr>';
+  return '<div class="card"><div class="card-head"><h3>治療師常客 TOP 10</h3><div class="row" style="gap:5px">'+pills+'</div></div><div class="card-body flush"><table><thead><tr><th style="text-align:center">名次</th><th>常客</th><th>到診次數</th><th>消費總金額</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
 views.analytics=function(){
   var done=BOOKINGS.filter(function(b){return b.status==='completed';});
   /* 營收一律以消費記錄（實際收款）為準，避免與消費記錄頁脫鉤、或被日後改價影響 */
@@ -1620,17 +1787,22 @@ views.analytics=function(){
   return shell('analytics','營運分析',
     '<div class="stat-grid"><div class="stat-card"><div class="sc-n">'+done.length+'</div><div class="sc-l">完成人次</div></div><div class="stat-card"><div class="sc-n mint">'+fmtNT(rev)+'</div><div class="sc-l">總營收</div></div><div class="stat-card"><div class="sc-n">'+fmtNT(avg)+'</div><div class="sc-l">平均客單價</div></div><div class="stat-card"><div class="sc-n">'+rate+'%</div><div class="sc-l">完診率</div></div></div>'+
     '<div class="grid2"><div class="card"><div class="card-head"><h3>服務營收 / 筆數</h3></div><div class="card-body">'+(svcRows||'<div class="empty">尚無資料</div>')+'</div></div>'+
-    '<div class="card"><div class="card-head"><h3>治療師營收</h3></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>完成次數</th><th>營收</th></tr></thead><tbody>'+tRows+'</tbody></table></div></div></div>');
+    '<div class="card"><div class="card-head"><h3>治療師營收</h3></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>完成次數</th><th>營收</th></tr></thead><tbody>'+tRows+'</tbody></table></div></div></div>'+
+    topClientsCard());
 };
 
 /* ============ 消費記錄 ============ */
-var _payFilter={pay:'all'};
+var _payFilter={pay:'all',date:''};
 var PAY_LABEL={cash:'現金',transfer:'匯款',card:'刷卡'};
 function payFiltered(){
   return PAYMENTS.filter(function(r){
-    return _payFilter.pay==='all'||r.pay===_payFilter.pay;
+    if(_payFilter.pay!=='all'&&r.pay!==_payFilter.pay)return false;
+    if(_payFilter.date&&r.date!==_payFilter.date)return false;
+    return true;
   }).sort(function(a,b){return (b.paidAt||'').localeCompare(a.paidAt||'');});
 }
+function setPayDate(d){_payFilter.date=d;go('payments');}
+function clearPayDate(){_payFilter.date='';go('payments');}
 function filterPayRows(q){q=(q||'').toLowerCase();document.querySelectorAll('#payBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 views.payments=function(){
   var list=payFiltered();
@@ -1651,21 +1823,25 @@ views.payments=function(){
   var pills=[['all','全部'],['cash','現金'],['transfer','匯款'],['card','刷卡']].map(function(p){
     return '<button class="pay-pill'+(_payFilter.pay===p[0]?' sel':'')+'" onclick="setPayFilter(\''+p[0]+'\')">'+p[1]+'</button>';
   }).join('');
+  var dateLabel=_payFilter.date?('（'+_payFilter.date+'）'):'（全部）';
   return shell('payments','消費記錄',
-    '<div class="stat-grid"><div class="stat-card highlight"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">收款總額</div></div>'+
+    '<div class="stat-grid"><div class="stat-card highlight"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">收款總額'+dateLabel+'</div></div>'+
     '<div class="stat-card"><div class="sc-n">'+list.length+'</div><div class="sc-l">交易筆數</div></div>'+
     '<div class="stat-card"><div class="sc-n">'+fmtNT(byPay.cash)+'</div><div class="sc-l">現金</div></div>'+
     '<div class="stat-card"><div class="sc-n">'+fmtNT(byPay.transfer+byPay.card)+'</div><div class="sc-l">匯款＋刷卡</div></div></div>'+
-    '<div class="card"><div class="card-head"><div class="row" style="gap:6px">'+pills+'</div><div class="search-wrap"><input id="payq" placeholder="搜尋姓名或電話" oninput="filterPayRows(this.value)"><button class="s-clear" onclick="document.getElementById(\'payq\').value=\'\';filterPayRows(\'\')">&times;</button></div></div>'+
+    '<div class="card"><div class="card-head" style="gap:10px"><div class="row" style="gap:6px">'+pills+'</div>'+
+    '<div class="row" style="gap:8px;flex-wrap:wrap">'+
+    '<div class="row" style="gap:5px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">每日</span><input type="date" value="'+esc(_payFilter.date)+'" onchange="setPayDate(this.value)" class="'+(_payFilter.date?'':'date-empty')+'" data-ph="選擇日期" style="padding:8px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+(_payFilter.date?'<button class="btn sm gray" onclick="clearPayDate()">清除</button>':'')+'</div>'+
+    '<div class="search-wrap"><input id="payq" placeholder="搜尋姓名或電話" oninput="filterPayRows(this.value)"><button class="s-clear" onclick="document.getElementById(\'payq\').value=\'\';filterPayRows(\'\')">&times;</button></div></div></div>'+
     '<div class="card-body flush"><table><thead><tr><th>病患</th><th>服務</th><th>治療師</th><th>付款方式</th><th>金額</th><th>結帳時間</th><th></th></tr></thead><tbody id="payBody">'+rows+'</tbody></table>'+(list.length?'':'<div class="empty">尚無消費記錄，結帳完成後會自動產生。</div>')+'</div></div>');
 };
 function setPayFilter(p){_payFilter.pay=p;go('payments');}
 function reprintReceipt(bookingId){
   var b=BOOKINGS.find(function(x){return x.id===bookingId;});
   var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});
-  if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate};else{showToast('找不到記錄');return;}}
+  if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate,paidAmount:pay.amount};else{showToast('找不到記錄');return;}}
   var p=getPatient(b.phone)||{};
-  if(pay&&b.paidAmount==null)b.paidAmount=pay.amount;
+  if(pay)b.paidAmount=pay.amount;
   showReceipt(b,b.name,p.dob||'',p.idNum||'');
 }
 function voidPayment(pid){
@@ -1697,8 +1873,70 @@ views.payroll=function(){
     return '<tr><td><div class="t-name">'+t.name+'</div><div class="t-sub" style="margin-top:2px">'+sub+'</div></td><td class="num">'+fmtNT(t.base)+'</td><td>'+bks.length+' 次</td><td class="num">'+fmtNT(comm)+'</td><td class="num" style="font-weight:700;color:var(--mint-d)">'+fmtNT(total)+'</td><td><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">設定</button></td></tr>';
   }).join('');
   return shell('payroll','員工薪資','<div class="card"><div class="card-body flush"><table><thead><tr><th>治療師 / 抽成設定</th><th>底薪</th><th>完成次數</th><th>抽成金額</th><th>應發薪資</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'+
-    '<div class="banner info"><span>i</span><div>「抽成金額」＝每項服務設定金額 × 已完成次數，因此在有完成療程前會顯示 NT$0；你設定的單次金額會列在治療師名稱下方，並於儲存後保留。</div></div>');
+    '<div class="banner info"><span>i</span><div>「抽成金額」＝每項服務設定金額 × 已完成次數，因此在有完成療程前會顯示 NT$0；你設定的單次金額會列在治療師名稱下方，並於儲存後保留。</div></div>',
+    '<button class="btn sm" onclick="payrollExportModal()">輸出薪資明細</button>');
 };
+function payrollRowsFor(tid,from,to){
+  var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return null;
+  var bks=BOOKINGS.filter(function(b){
+    if(b.t!==tid||b.status!=='completed')return false;
+    if(from&&b.date<from)return false;
+    if(to&&b.date>to)return false;
+    return true;
+  }).sort(function(a,b){return a.date.localeCompare(b.date);});
+  var detail=bks.map(function(b){var r=getRate(tid,b.svc);return {date:b.date,name:b.name,svc:svcOf(b.svc).name,rate:r};});
+  var comm=detail.reduce(function(a,d){return a+d.rate;},0);
+  return {t:t,detail:detail,count:bks.length,comm:comm,total:t.base+comm};
+}
+function payrollExportModal(){
+  var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join('');
+  var d=new Date();var ym=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  var first=ym+'-01';var last=ym+'-'+String(new Date(d.getFullYear(),d.getMonth()+1,0).getDate()).padStart(2,'0');
+  modal('<div class="modal-head" style="background:var(--navy)">輸出薪資明細<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body">'+
+    '<div class="field"><label>治療師</label><select id="px-t"><option value="__all__">全部治療師</option>'+tOpts+'</select></div>'+
+    '<div class="grid2"><div class="field"><label>起始日期</label><input id="px-from" type="date" value="'+first+'"></div><div class="field"><label>結束日期</label><input id="px-to" type="date" value="'+last+'"></div></div>'+
+    '<div style="font-size:11px;color:var(--slate)">明細包含期間內每筆已完成療程、抽成金額、底薪與應發合計，可列印或存成 PDF。</div>'+
+    '</div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="doPayrollExport()">產生明細</button></div>');
+}
+function doPayrollExport(){
+  var tid=document.getElementById('px-t').value;
+  var from=document.getElementById('px-from').value;
+  var to=document.getElementById('px-to').value;
+  var targets=tid==='__all__'?THERAPISTS.map(function(t){return t.id;}):[tid];
+  var period=(from||'起始')+' ～ '+(to||'迄今');
+  var sections=targets.map(function(id){
+    var r=payrollRowsFor(id,from,to);if(!r)return '';
+    var detailRows=r.detail.length?r.detail.map(function(d){return '<tr><td>'+esc(d.date)+'</td><td>'+esc(d.name)+'</td><td>'+esc(d.svc)+'</td><td style="text-align:right">'+fmtNT(d.rate)+'</td></tr>';}).join(''):'<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">此期間無完成療程</td></tr>';
+    return '<div class="pr-block"><h3 style="font-size:16px;margin-bottom:2px">'+esc(r.t.name)+'　<span style="font-size:12px;color:#666;font-weight:400">'+esc(r.t.title)+'</span></h3>'+
+      '<table class="pr-table"><thead><tr><th>日期</th><th>個案</th><th>服務</th><th style="text-align:right">抽成</th></tr></thead><tbody>'+detailRows+'</tbody></table>'+
+      '<div class="pr-sum"><div class="pr-line"><span>完成療程</span><span>'+r.count+' 次</span></div><div class="pr-line"><span>抽成小計</span><span>'+fmtNT(r.comm)+'</span></div><div class="pr-line"><span>底薪</span><span>'+fmtNT(r.t.base)+'</span></div><div class="pr-line pr-total"><span>應發薪資</span><span>'+fmtNT(r.total)+'</span></div></div></div>';
+  }).join('');
+  var css='*{box-sizing:border-box;margin:0;padding:0}'+
+    "body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;padding:28px;color:#1f3a47;background:#fff}"+
+    '.pr-head{text-align:center;border-bottom:2px solid #1a4d68;padding-bottom:14px;margin-bottom:20px}'+
+    '.pr-head h1{font-size:20px;color:#1a4d68}.pr-head .sub{font-size:12px;color:#666;margin-top:4px}'+
+    '.pr-block{margin-bottom:28px;page-break-inside:avoid}'+
+    '.pr-table{width:100%;border-collapse:collapse;margin:10px 0}'+
+    '.pr-table th{background:#f0f5f7;text-align:left;padding:8px 10px;font-size:12px;color:#555;border-bottom:1px solid #dce6ec}'+
+    '.pr-table td{padding:7px 10px;font-size:13px;border-bottom:1px solid #eef3f6}'+
+    '.pr-sum{margin-top:8px;border-top:2px solid #1a4d68;padding-top:8px;max-width:280px;margin-left:auto}'+
+    '.pr-line{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}'+
+    '.pr-total{font-size:16px;font-weight:900;color:#1f9e7e;border-top:1px solid #dce6ec;margin-top:4px;padding-top:6px}'+
+    '@media print{body{padding:0}}';
+  var auto='<scr'+'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print();},500);});</scr'+'ipt>';
+  var html='<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>薪資明細 '+esc(period)+'</title><style>'+css+'</style></head><body>'+
+    '<div class="pr-head"><h1>'+esc(CLINIC_INFO.name)+' · 薪資明細</h1><div class="sub">期間：'+esc(period)+'　|　產生日期：'+todayStr()+'</div></div>'+
+    sections+auto+'</body></html>';
+  try{
+    var blob=new Blob([html],{type:'text/html'});var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){if(a.parentNode)a.parentNode.removeChild(a);URL.revokeObjectURL(url);},3000);
+    closeModal();showToast('已開啟明細新分頁，可列印或存成 PDF');
+  }catch(e){showToast('輸出失敗：'+e.message);}
+}
 function payrollModal(tid){
   var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;
   if(!T_SVC_RATES[tid])T_SVC_RATES[tid]={};
@@ -1958,7 +2196,7 @@ views.schedule=function(){
     '<div class="card"><div class="card-head"><h3><span class="cal-dot" style="background:'+tColor(t.id)+';display:inline-block;margin-right:6px"></span>'+t.name+' 每週班表</h3><div class="row" style="gap:8px"><span class="tag mint">每週 '+workN+' 天</span><button class="btn sm" onclick="saveSched(\''+t.id+'\')">儲存排班</button></div></div><div class="card-body">'+cards+'</div></div>'+
     '<div class="card"><div class="card-head"><h3>特別休假日</h3><span class="tag amber">'+t.leaves.length+' 天</span></div><div class="card-body">'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center">'+
-    '<input id="lv-date" type="date" min="'+todayStr()+'" max="2100-12-31" style="padding:9px 11px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
+    '<input id="lv-date" type="date" min="'+todayStr()+'" max="2100-12-31" onchange="this.classList.toggle(\'date-empty\',!this.value)" class="date-empty" data-ph="選擇休假日期" style="padding:9px 11px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
     '<label class="row" style="gap:5px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer"><input type="checkbox" id="lv-allday" checked onchange="toggleLeaveTime(this)" style="width:auto;cursor:pointer"> 全天</label>'+
     '<input id="lv-start" type="time" value="09:00" style="display:none;padding:9px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+
     '<span id="lv-dash" style="display:none;color:var(--slate);font-weight:700">–</span>'+
@@ -2002,12 +2240,14 @@ function confirmBuyPkg(ph){
 
 /* ============ 課程設定 ============ */
 views.packages=function(){
+  var sRows=SERVICES.map(function(s){return '<tr><td class="t-name">'+esc(s.name)+'</td><td>'+s.dur+' 分</td><td class="num">'+fmtNT(s.price)+'</td><td class="t-sub">'+esc(s.desc)+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="editSvcModal(\''+s.id+'\')">編輯</button><button class="btn sm danger" onclick="delSvc(\''+s.id+'\')">刪除</button></td></tr>';}).join('');
+  var svcCard='<div class="card"><div class="card-head"><h3>服務項目</h3><button class="btn sm" onclick="addSvcModal()">+ 新增服務</button></div><div class="card-body flush"><table><thead><tr><th>項目</th><th>時長</th><th>費用</th><th>說明</th><th></th></tr></thead><tbody>'+sRows+'</tbody></table>'+(SERVICES.length?'':'<div class="empty">尚無服務項目，點右上角「新增服務」建立。</div>')+'</div></div>';
   var cards=PACKAGES.map(function(p){
     var sv=svcOf(p.svc);var full=sv.price*p.sessions;var disc=full?Math.round(p.price/full*100):100;var per=Math.round(p.price/p.sessions);
     return '<div class="pkg-card" onclick="editPkgModal('+p.id+')"><div class="pkg-name">'+esc(p.name)+'</div><div class="pkg-svc">'+esc(sv.name)+'</div><div><span class="pkg-price">'+fmtNT(p.price)+'</span>'+(p.price<full?'<span class="pkg-orig">'+fmtNT(full)+'</span>':'')+'</div><div class="row" style="gap:5px"><span class="tag mint">'+p.sessions+' 堂</span><span class="tag gray">每堂 '+fmtNT(per)+'</span>'+(p.price<full?'<span class="tag amber">'+disc+' 折</span>':'')+'</div>'+(p.desc?'<div class="pkg-desc">'+esc(p.desc)+'</div>':'')+'</div>';
   }).join('');
-  return shell('packages','課程設定','<div class="pkg-grid">'+cards+'<div class="pkg-card pkg-add" onclick="addPkgModal()"><div style="font-size:30px;font-weight:300">+</div><div>新增課程</div></div></div>',
-    '<button class="btn sm" onclick="addPkgModal()">+ 新增課程</button>');
+  var pkgCard='<div class="card"><div class="card-head"><h3>課程方案（堂數套餐）</h3><button class="btn sm" onclick="addPkgModal()">+ 新增課程</button></div><div class="card-body"><div class="pkg-grid">'+cards+'<div class="pkg-card pkg-add" onclick="addPkgModal()"><div style="font-size:30px;font-weight:300">+</div><div>新增課程</div></div></div></div></div>';
+  return shell('packages','服務與課程',svcCard+pkgCard);
 };
 function addPkgModal(){
   var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'">'+s.name+' ('+fmtNT(s.price)+'/堂)</option>';}).join('');
@@ -2030,9 +2270,10 @@ function delPkg(id){var i=PACKAGES.findIndex(function(x){return x.id===id;});if(
 function stampUploadBox(label,type,tid){
   var cur=tid?STAMP_T[tid]:STAMPS[type];
   var key=tid?('t-'+tid):type;
+  var shape=tid?'長方形':(type==='clinic'?'橢圓形':type==='owner'?'長方形':'正方形');
   var preview=cur?'<img src="'+cur+'" style="width:64px;height:64px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff">':'<div style="width:64px;height:64px;border:1.5px dashed var(--mist);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:11px">無</div>';
   return '<div class="row" style="gap:12px;padding:12px 0;border-bottom:1px solid var(--line)">'+preview+
-    '<div style="flex:1"><div style="font-weight:700;font-size:13px">'+esc(label)+'</div><div style="font-size:11px;color:var(--slate)">建議去背 PNG，正方形</div></div>'+
+    '<div style="flex:1"><div style="font-weight:700;font-size:13px">'+esc(label)+'</div><div style="font-size:11px;color:var(--slate)">建議去背 PNG，'+shape+'</div></div>'+
     '<div class="row" style="gap:5px"><label class="btn sm ghost" style="cursor:pointer">上傳<input type="file" accept="image/*" style="display:none" onchange="uploadStamp(this,\''+key+'\')"></label>'+(cur?'<button class="btn sm danger" onclick="clearStamp(\''+key+'\')">移除</button>':'')+'</div></div>';
 }
 views.receipt=function(){
@@ -2116,7 +2357,7 @@ views.clinic=function(){
   var tRows=THERAPISTS.map(function(t){
     var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});
     var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';
-    return '<tr><td><div class="t-name">'+t.name+'</div><div class="t-sub">'+esc(t.title)+'</div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tAccountModal(\''+t.id+'\')">帳號權限</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm ghost" onclick="tProfileModal(\''+t.id+'\')">資料</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';
+    return '<tr><td><div class="t-name">'+t.name+'</div><div class="t-sub">'+esc(t.title)+'</div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';
   }).join('');
   var sRows=SERVICES.map(function(s){return '<tr><td class="t-name">'+esc(s.name)+'</td><td>'+s.dur+' 分</td><td class="num">'+fmtNT(s.price)+'</td><td class="t-sub">'+esc(s.desc)+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="editSvcModal(\''+s.id+'\')">編輯</button><button class="btn sm danger" onclick="delSvc(\''+s.id+'\')">刪除</button></td></tr>';}).join('');
   return shell('clinic','診所管理',
@@ -2126,8 +2367,7 @@ views.clinic=function(){
     '<div class="field"><label>行事曆 ID</label><input id="ci-calendarId" value="'+esc(CLINIC_INFO.calendarId||'primary')+'" style="font-family:monospace"></div>'+
     '<div class="row" style="gap:8px"><button class="btn" onclick="saveCalendarId()">儲存行事曆 ID</button><button class="btn ghost" onclick="pickGCalendar()">從清單選擇</button><button class="btn gray" onclick="testGCalConnection()">測試連線</button></div>'+
     '</div></div>'+
-    '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div></div>'+
-    '<div class="card"><div class="card-head"><h3>服務項目</h3><button class="btn sm" onclick="addSvcModal()">+ 新增服務</button></div><div class="card-body flush"><table><thead><tr><th>項目</th><th>時長</th><th>費用</th><th>說明</th><th></th></tr></thead><tbody>'+sRows+'</tbody></table>'+(SERVICES.length?'':'<div class="empty">尚無服務項目，點右上角「新增服務」建立。</div>')+'</div></div>');
+    '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div></div>');
 };
 function saveClinic(){['name','reg','owner','address','tel'].forEach(function(k){var el=document.getElementById('ci-'+k);if(el)CLINIC_INFO[k]=el.value.trim();});showToast('診所資訊已儲存');}
 function saveCalendarId(){var el=document.getElementById('ci-calendarId');if(el)CLINIC_INFO.calendarId=el.value.trim()||'primary';showToast('行事曆已儲存：'+CLINIC_INFO.calendarId);}
@@ -2145,6 +2385,59 @@ function pickGCalendar(){
 }
 function chooseGCal(id){CLINIC_INFO.calendarId=id;closeModal();go('clinic');showToast('已選擇行事曆並儲存');}
 
+/* ── 治療師整合編輯（基本資料 + 帳號權限）── */
+function tEditModal(tid,tab){
+  var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;
+  tab=tab||'profile';
+  var c=tColor(tid);
+  var linked=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===tid;});
+  var accRows=linked.length?linked.map(function(em){
+    var s=EMAIL_WHITELIST[em];
+    return '<div class="row" style="gap:8px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-family:monospace;font-size:12px;font-weight:600">'+esc(em)+'</div><div style="margin-top:3px"><span class="tag '+(s.role==='admin'?'amber':'mint')+'">'+(ROLE_LABELS[s.role]||s.role)+'</span></div></div><select onchange="setStaffRole(\''+esc(em)+'\',this.value)" style="padding:6px 8px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px">'+staffRoleOptions(s.role)+'</select><button class="shift-del" onclick="unlinkStaffEdit(\''+esc(em)+'\',\''+tid+'\')">&times;</button></div>';
+  }).join(''):'<div class="empty" style="padding:20px">尚未連結任何帳號</div>';
+  modal('<div class="modal-head" style="background:'+c+'">'+esc(t.name)+' - 編輯<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="edit-tabs"><button class="edit-tab'+(tab==='profile'?' active':'')+'" onclick="tEditTab(this,\'profile\')">基本資料</button><button class="edit-tab'+(tab==='account'?' active':'')+'" onclick="tEditTab(this,\'account\')">帳號權限</button></div>'+
+    '<div class="edit-panel'+(tab==='profile'?' active':'')+'" id="ted-profile">'+
+    '<div class="grid2"><div class="field"><label>姓名</label><input id="tp-name" value="'+esc(t.name)+'"></div><div class="field"><label>職稱</label><input id="tp-title" value="'+esc(t.title)+'"></div></div>'+
+    '<div class="field"><label>代表色</label><input id="tp-color" type="color" value="'+c+'" style="width:60px;height:36px"></div>'+
+    '<div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTProfileEdit(\''+tid+'\')">儲存資料</button></div></div>'+
+    '<div class="edit-panel'+(tab==='account'?' active':'')+'" id="ted-account">'+
+    '<div class="sec-label">已連結帳號</div><div id="tedAccList">'+accRows+'</div>'+
+    '<div style="height:1px;background:var(--line);margin:16px 0"></div>'+
+    '<div class="sec-label">新增 / 連結 Gmail 帳號</div>'+
+    '<div class="field"><label>顯示名稱</label><input id="ta-name" value="'+esc(t.name)+'"></div>'+
+    '<div class="field"><label>Gmail 帳號</label><input id="ta-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div>'+
+    '<div class="field"><label>權限角色</label><select id="ta-role">'+staffRoleOptions('therapist')+'</select></div>'+
+    '<div class="row" style="justify-content:flex-end"><button class="btn" onclick="addTAccountEdit(\''+tid+'\')">新增帳號</button></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">關閉</button></div>');
+}
+function tEditTab(btn,name){
+  btn.parentNode.querySelectorAll('.edit-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');
+  ['profile','account'].forEach(function(n){var el=document.getElementById('ted-'+n);if(el)el.classList.toggle('active',n===name);});
+}
+function saveTProfileEdit(tid){
+  var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;
+  var n=document.getElementById('tp-name').value.trim();if(n){t.name=n;TN[tid]=n;}
+  t.title=document.getElementById('tp-title').value.trim()||t.title;
+  TC[tid]=document.getElementById('tp-color').value;
+  closeModal();go('clinic');showToast('資料已儲存');
+}
+function addTAccountEdit(tid){
+  var name=document.getElementById('ta-name').value.trim();
+  var email=document.getElementById('ta-email').value.trim().toLowerCase();
+  if(!name){showToast('請填寫名稱');return;}
+  if(!email||email.indexOf('@')<1){showToast('請填寫有效的 Gmail');return;}
+  if(EMAIL_WHITELIST[email]){showToast('此帳號已存在');return;}
+  EMAIL_WHITELIST[email]={name:name,therapistId:tid,role:document.getElementById('ta-role').value};
+  tEditModal(tid,'account');showToast('帳號已新增並連結');
+}
+function unlinkStaffEdit(email,tid){
+  var s=EMAIL_WHITELIST[email];if(!s)return;
+  var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});
+  if(s.role==='admin'&&admins.length<=1){showToast('至少需保留一位管理員，無法刪除');return;}
+  delete EMAIL_WHITELIST[email];
+  tEditModal(tid,'account');showToast('已移除帳號');
+}
 /* ── 員工帳號與權限 ── */
 function staffRoleOptions(sel){
   return [['admin','管理員（所有頁面）'],['therapist','治療師（看診相關）']].map(function(r){
@@ -2213,7 +2506,7 @@ function addSvcModal(){
 function submitSvc(){
   var name=document.getElementById('ns-name').value.trim();if(!name){showToast('請填寫服務名稱');return;}
   SERVICES.push({id:'s'+(++SVC_ID),name:name,dur:Number(document.getElementById('ns-dur').value)||60,price:Number(document.getElementById('ns-price').value)||0,desc:document.getElementById('ns-desc').value||''});
-  closeModal();go('clinic');showToast('服務項目已新增');
+  closeModal();go('packages');showToast('服務項目已新增');
 }
 function editSvcModal(id){
   var s=SERVICES.find(function(x){return x.id===id;});if(!s)return;
@@ -2225,12 +2518,12 @@ function saveSvc(id){
   s.dur=Number(document.getElementById('es-dur').value)||s.dur;
   s.price=Number(document.getElementById('es-price').value)||s.price;
   s.desc=document.getElementById('es-desc').value||s.desc;
-  closeModal();go('clinic');showToast('已儲存');
+  closeModal();go('packages');showToast('已儲存');
 }
 function delSvc(id){
   modal('<div class="modal-head" style="background:var(--danger)">刪除服務<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此服務項目？</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmDelSvc(\''+id+'\')">確定刪除</button></div>');
 }
-function confirmDelSvc(id){var i=SERVICES.findIndex(function(x){return x.id===id;});if(i>-1)SERVICES.splice(i,1);closeModal();go('clinic');showToast('已刪除');}
+function confirmDelSvc(id){var i=SERVICES.findIndex(function(x){return x.id===id;});if(i>-1)SERVICES.splice(i,1);closeModal();go('packages');showToast('已刪除');}
 
 /* ============ 客戶線上預約 ============ */
 /* 病患自己的裝置送出的初診／預約，POST 回 RENDER 伺服器；best-effort，不阻擋畫面 */
