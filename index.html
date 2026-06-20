@@ -591,10 +591,22 @@ function go(v){
 }
 
 /* ============ 伺服器持久化 ============ */
+var _saveExpiredNotified=false;
 function saveAll(){
   if(!RENDER_URL||!currentUser)return Promise.resolve();
   var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE};
-  return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).catch(function(e){console.warn('saveAll 失敗',e.message);});
+  return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).then(function(r){
+    if(r.status===401||r.status===403){
+      if(!_saveExpiredNotified){_saveExpiredNotified=true;showSaveExpiredModal();}
+      return;
+    }
+    _saveExpiredNotified=false;
+  }).catch(function(e){console.warn('saveAll 失敗',e.message);});
+}
+function showSaveExpiredModal(){
+  modal('<div class="modal-head" style="background:var(--warn)">登入已逾時<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner" style="background:#fdf3e0;border:1px solid #f0d090;color:#8a5a12"><span>!</span><div>您的登入憑證已過期（約每小時需重新驗證一次），<b>剛才的變更尚未存到伺服器</b>。請重新登入後，系統會自動重新儲存，資料不會遺失。</div></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">稍後再說</button><button class="btn" onclick="closeModal();signOut()">重新登入</button></div>');
 }
 function loadFromServer(cb){
   if(!RENDER_URL){if(cb)cb();return;}
@@ -1349,10 +1361,36 @@ function __selfCheck(){
   }
   return {ok:true};
 }
-function __bootApp(){
-  var mb=document.getElementById('modalBg');
-  if(mb&&!mb._bound){mb._bound=true;mb.addEventListener('click',function(e){if(e.target.id==='modalBg')closeModal();});}
-  window.addEventListener('error',function(ev){var box=document.getElementById('frame');if(box&&(!box.innerHTML||box.innerHTML.length<50)){box.innerHTML='<div style="padding:30px;font-family:monospace;font-size:12px;color:#c00;line-height:1.8"><b>JS 錯誤（請截圖回報）：</b><br>'+ev.message+'<br>行 '+ev.lineno+'，列 '+ev.colno+'</div>';}});
+/* 全域錯誤攔截：任何 onclick / 事件處理函式出錯時，跳友善提示而非靜默壞掉。
+   注意：這只能讓「已載入的程式」出錯時不卡死，無法防止前端被竄改（前端本質無法防破解，
+   真正的安全防線在後端 token 驗證與限流）。 */
+function __safeErrorToast(msg){
+  try{
+    var t=document.getElementById('sToast');
+    if(t){t.textContent='操作發生問題，請重試或重新整理';t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2600);}
+  }catch(e){}
+}
+function __wrapHandler(fn){
+  return function(){
+    try{return fn.apply(this,arguments);}
+    catch(err){console.error('事件處理錯誤:',err);__safeErrorToast(err&&err.message);}
+  };
+}
+/* 攔截全域未捕捉錯誤（含 onclick 內同步錯誤） */
+window.addEventListener('error',function(ev){
+  var box=document.getElementById('frame');
+  if(box&&(!box.innerHTML||box.innerHTML.length<50)){
+    box.innerHTML='<div style="padding:30px;font-family:monospace;font-size:12px;color:#c00;line-height:1.8"><b>JS 錯誤（請截圖回報）：</b><br>'+ (ev.message||'')+'<br>行 '+ev.lineno+'，列 '+ev.colno+'<br><button style="margin-top:14px;padding:8px 16px;border:none;background:#1a4d68;color:#fff;border-radius:8px;cursor:pointer" onclick="location.reload()">重新整理</button></div>';
+  }else{
+    /* 畫面還在，只是某個操作出錯：給輕量提示，不破壞當前畫面 */
+    __safeErrorToast(ev.message);
+  }
+});
+/* 攔截未處理的 Promise 錯誤（非同步：fetch / 行事曆 / LINE 等） */
+window.addEventListener('unhandledrejection',function(ev){
+  console.error('未處理的非同步錯誤:',ev.reason);
+  __safeErrorToast(ev.reason&&ev.reason.message);
+});
   var chk=__selfCheck();
   if(!chk.ok){
     var msg='<div style="padding:30px;font-family:monospace;font-size:13px;line-height:1.9"><b style="color:#c00;font-size:15px">⚠ 自我檢查發現缺漏</b><br><br>';
