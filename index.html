@@ -1175,8 +1175,17 @@ function iNext(step){if(step===1){var name=document.getElementById('i-name').val
 function iSubmit(){var sig=document.getElementById('i-sig').value.trim();if(!sig){showToast('請填寫簽名');return;}_iData.sigName=sig;_iData.sigRel=document.getElementById('i-rel').value.trim()||'本人';_iData.sigDate=new Date().toLocaleDateString('zh-TW');if(_iData.phone){INTAKE_DATA[_iData.phone]=JSON.parse(JSON.stringify(_iData));var p=getPatient(_iData.phone);if(!p){p={phone:_iData.phone,line:false,lineId:'',note:''};PATIENTS.push(p);}p.name=_iData.name||p.name;p.dob=_iData.dob||p.dob;p.idNum=_iData.idNum||p.idNum;p.gender=_iData.gender||p.gender;if(p.lineId){var msg='【領航物理治療所】\n'+p.name+' 您好，我們已收到您的初診資料 ✓\n主訴：'+(_iData.complaint||'-')+'\n感謝您的填寫。';sendLineMsg(p.lineId,msg);}}if(!currentUser)submitToServer('intake',_iData);_iStep=99;document.getElementById('frame').innerHTML=views.intake();}
 function resetIntake(){_iStep=1;_iData={};_iGender='';document.getElementById('frame').innerHTML=views.intake();}
 
-/* 啟動 */
-document.getElementById('modalBg').addEventListener('click',function(e){if(e.target.id==='modalBg')closeModal();});
+/* ========= 應用啟動（唯一入口）========= */
+function __bootApp(){
+  var mb=document.getElementById('modalBg');
+  if(mb&&!mb._bound){mb._bound=true;mb.addEventListener('click',function(e){if(e.target.id==='modalBg')closeModal();});}
+  window.addEventListener('error',function(ev){var box=document.getElementById('frame');if(box&&(!box.innerHTML||box.innerHTML.length<50)){box.innerHTML='<div style="padding:30px;font-family:monospace;font-size:12px;color:#c00;line-height:1.8"><b>JS 錯誤（請截圖回報）：</b><br>'+ev.message+'<br>行 '+ev.lineno+'，列 '+ev.colno+'</div>';}});
+  var start='login';
+  try{var v=new URLSearchParams(window.location.search).get('view');if(v==='intake'||v==='book')start=v;}catch(e){}
+  go(start);
+}
+__bootApp();
+
 (function(){
   var start='login';
   try{var v=new URLSearchParams(window.location.search).get('view');if(v==='intake'||v==='book')start=v;}catch(e){}
