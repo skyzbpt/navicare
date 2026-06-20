@@ -519,7 +519,7 @@ function go(v){
 /* ============ 伺服器持久化 ============ */
 function saveAll(){
   if(!RENDER_URL||!currentUser)return Promise.resolve();
-  var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO};
+  var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE};
   return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).catch(function(e){console.warn('saveAll 失敗',e.message);});
 }
 function loadFromServer(cb){
@@ -541,7 +541,7 @@ function loadFromServer(cb){
     if(s.EDU_DATA)EDU_DATA=s.EDU_DATA;if(s.EDU_ID)EDU_ID=s.EDU_ID;if(s.EDU_CATS)EDU_CATS=s.EDU_CATS;if(s.EDU_SENT)Object.assign(EDU_SENT,s.EDU_SENT);
     if(s.CLINIC_INFO)Object.assign(CLINIC_INFO,s.CLINIC_INFO);
     if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
-    if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;if(s.LOGIN_LOGO)LOGIN_LOGO=s.LOGIN_LOGO;
+    if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;if(s.LOGIN_LOGO)LOGIN_LOGO=s.LOGIN_LOGO;if(s.REMINDER_TEMPLATE!=null)REMINDER_TEMPLATE=s.REMINDER_TEMPLATE;
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
 }
@@ -1165,13 +1165,29 @@ function clinicLogoCard(){
   var btns=(LOGIN_LOGO?'<button class="btn gray" onclick="clearLoginLogo()">移除</button>':'')+'<label class="btn ghost" style="cursor:pointer;font-family:inherit">上傳<input type="file" accept="image/*" style="display:none" onchange="uploadLoginLogo(this)"></label>';
   return '<div class="card"><div class="card-head"><h3>診所 Logo</h3><span class="tag mint">登入頁 · 側欄</span></div><div class="card-body"><div class="banner info"><span>i</span><div>上傳後會取代登入頁與後台側欄的房子圖示。也可直接點側欄左上角圖示更換。</div></div><div class="row" style="gap:16px;align-items:center">'+preview+'<div style="flex:1"><div style="font-weight:700;font-size:14px;margin-bottom:4px">前台登入頁 Logo</div><div style="font-size:12px;color:var(--slate)">取代登入頁與側欄的房子圖示</div></div><div class="row" style="gap:6px">'+btns+'</div></div></div></div>';
 }
+/* ============ 明日提醒訊息範本（可自訂）============ */
+var REMINDER_DEFAULT='【領航物理治療所】\n提醒您明日有預約 🔔\n📅 {date}　{time}\n🏥 {service}\n請準時到診，謝謝！';
+var REMINDER_TEMPLATE='';
+function fillReminderTpl(tpl){return tpl.replace(/{name}/g,'王小明').replace(/{date}/g,'2026-06-21').replace(/{time}/g,'14:00').replace(/{service}/g,'整合物理治療');}
+function reminderTemplateCard(){
+  var tpl=(REMINDER_TEMPLATE||REMINDER_DEFAULT);
+  return '<div class="card"><div class="card-head"><h3>明日提醒訊息範本</h3><span class="tag mint">LINE 自動推播</span></div><div class="card-body">'+
+    '<div class="banner info"><span>i</span><div>每天自動推播、以及「立即推播明日提醒」送出的文字內容。可用變數：<b>{name}</b> 姓名、<b>{date}</b> 日期、<b>{time}</b> 時間、<b>{service}</b> 服務名稱。</div></div>'+
+    '<div class="field"><label>訊息內容</label><textarea id="rt-tpl" style="height:150px;resize:vertical;line-height:1.8;font-size:13px" oninput="updateReminderPreview()">'+esc(tpl)+'</textarea></div>'+
+    '<div class="sec-label">預覽（以範例資料代入變數）</div><div id="rt-preview" style="background:#f0fff8;border:1px solid #b2f0d8;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;white-space:pre-wrap;margin-bottom:14px">'+esc(fillReminderTpl(tpl))+'</div>'+
+    '<div class="row" style="gap:8px"><button class="btn" onclick="saveReminderTpl()">儲存範本</button><button class="btn gray" onclick="restoreReminderTpl()">還原預設</button></div></div></div>';
+}
+function updateReminderPreview(){var el=document.getElementById('rt-tpl');var box=document.getElementById('rt-preview');if(el&&box)box.textContent=fillReminderTpl(el.value);}
+function saveReminderTpl(){var el=document.getElementById('rt-tpl');if(!el)return;var v=el.value;if(!v.trim()){showToast('範本不可空白');return;}REMINDER_TEMPLATE=v;saveAll();showToast('提醒範本已儲存並同步到伺服器');}
+function restoreReminderTpl(){REMINDER_TEMPLATE='';go('clinic');showToast('已還原為預設範本');}
+
 views.clinic=function(){
   var ci=[['name','機構名稱'],['reg','登記字號'],['owner','負責人'],['address','地址'],['tel','電話']];
   var ciH=ci.map(function(f){return '<div class="field"><label>'+f[1]+'</label><input id="ci-'+f[0]+'" value="'+esc(CLINIC_INFO[f[0]])+'"></div>';}).join('');
   var tRows=THERAPISTS.map(function(t){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';return '<tr><td><div class="t-name">'+t.name+'</div><div class="t-sub">'+esc(t.title)+'</div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
   return shell('clinic','診所管理',
     '<div class="card"><div class="card-head"><h3>診所資訊</h3></div><div class="card-body"><div class="grid2">'+ciH+'</div><button class="btn" onclick="saveClinic()">儲存診所資訊</button></div></div>'+
-    clinicLogoCard()+
+    clinicLogoCard()+reminderTemplateCard()+
     '<div class="card"><div class="card-head"><h3>Google 行事曆同步</h3></div><div class="card-body"><div class="banner info"><span>i</span><div>預約的新增、修改、取消會自動同步到選定的 Google 行事曆。預設為登入帳號主行事曆（primary）。</div></div><div class="field"><label>行事曆 ID</label><input id="ci-calendarId" value="'+esc(CLINIC_INFO.calendarId||'primary')+'" style="font-family:monospace"></div><div class="row" style="gap:8px"><button class="btn" onclick="saveCalendarId()">儲存行事曆 ID</button><button class="btn ghost" onclick="pickGCalendar()">從清單選擇</button><button class="btn gray" onclick="testGCalConnection()">測試連線</button></div></div></div>'+
     '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div></div>');
 };
