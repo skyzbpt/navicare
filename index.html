@@ -1308,13 +1308,13 @@ function clearLogo(){CLINIC_LOGO='';go('receipt');showToast('已移除 Logo');}
 
 /* ============ 診所管理 ============ */
 /* ============ 明日提醒訊息範本（可自訂）============ */
-var REMINDER_DEFAULT='【領航物理治療所】\n提醒您明日有預約 🔔\n📅 {date}　{time}\n🏥 {service}\n請準時到診，謝謝！';
+var REMINDER_DEFAULT='【領航物理治療所】\n親愛的貴賓，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 {date}\n⏰ {timerange}\n🏥 {service}\n🩺 治療師：{therapist}\n如有異動請於前一工作日來電 (02)2826-1698\n\n⚠️\n因故遲到者恕不延後治療時段，而費用將以原先預約項目價格進行收費。\n為保障其他學員預約需求，如需取消或更改時間，請於「前一工作日18:00前」告知。\n\n提醒您：如欲一次性預約≥2次以上的課程，需先預付所有預約的款項。\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
 var REMINDER_TEMPLATE='';
-function fillReminderTpl(tpl){return tpl.replace(/{name}/g,'王小明').replace(/{date}/g,'2026-06-21').replace(/{time}/g,'14:00').replace(/{service}/g,'整合物理治療');}
+function fillReminderTpl(tpl){return tpl.replace(/{name}/g,'王小明').replace(/{date}/g,'2026-06-21').replace(/{timerange}/g,'14:00–14:50（共 50 分鐘）').replace(/{endtime}/g,'14:50').replace(/{duration}/g,'50').replace(/{therapist}/g,'張博源').replace(/{time}/g,'14:00').replace(/{service}/g,'整合物理治療');}
 function reminderTemplateCard(){
   var tpl=(REMINDER_TEMPLATE||REMINDER_DEFAULT);
   return '<div class="card"><div class="card-head"><h3>明日提醒訊息範本</h3><span class="tag mint">LINE 自動推播</span></div><div class="card-body">'+
-    '<div class="banner info"><span>i</span><div>每天自動推播、以及「立即推播明日提醒」送出的文字內容。可用變數：<b>{name}</b> 姓名、<b>{date}</b> 日期、<b>{time}</b> 時間、<b>{service}</b> 服務名稱。</div></div>'+
+    '<div class="banner info"><span>i</span><div>每天自動推播、以及「立即推播明日提醒」送出的文字內容。可用變數：<b>{name}</b> 姓名、<b>{date}</b> 日期、<b>{time}</b> 開始時間、<b>{endtime}</b> 結束時間、<b>{timerange}</b> 起迄時間（含分鐘）、<b>{duration}</b> 分鐘數、<b>{therapist}</b> 治療師、<b>{service}</b> 服務名稱。</div></div>'+
     '<div class="field"><label>訊息內容</label><textarea id="rt-tpl" style="height:150px;resize:vertical;line-height:1.8;font-size:13px" oninput="updateReminderPreview()">'+esc(tpl)+'</textarea></div>'+
     '<div class="sec-label">預覽（以範例資料代入變數）</div><div id="rt-preview" style="background:#f0fff8;border:1px solid #b2f0d8;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;white-space:pre-wrap;margin-bottom:14px">'+esc(fillReminderTpl(tpl))+'</div>'+
     '<div class="row" style="gap:8px"><button class="btn" onclick="saveReminderTpl()">儲存範本</button><button class="btn gray" onclick="restoreReminderTpl()">還原預設</button></div></div></div>';
