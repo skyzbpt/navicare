@@ -733,26 +733,6 @@ function gcalUpsert(b){
   return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}if(r.status===404&&b.gcalEventId){b.gcalEventId=null;return gcalUpsert(b);}throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));});
 }
 function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){showToast('同步失敗：'+e.message);});});}
-function syncAllCalendar(){
-  if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  var targets=BOOKINGS.filter(function(b){return b.status!=='cancelled';});
-  if(!targets.length){showToast('目前沒有可同步的預約');return;}
-  targets.forEach(function(b){if(b.start==null||isNaN(b.start)){var hm=String(b.time||'00:00').split(':');b.start=Number(hm[0])*60+(Number(hm[1])||0);}});
-  ensureGCal(function(){
-    showToast('同步行事曆中…（共 '+targets.length+' 筆，請稍候）');
-    var ok=0,fail=0,lastErr='';
-    function next(i){
-      if(i>=targets.length){
-        saveAll();
-        if(fail){showToast('同步完成：成功 '+ok+'，失敗 '+fail+'。最後錯誤：'+lastErr);}
-        else{showToast('行事曆同步完成：成功 '+ok+' 筆 ✓');}
-        return;
-      }
-      gcalUpsert(targets[i]).then(function(){ok++;}).catch(function(e){fail++;lastErr=(e&&e.message)||'未知錯誤';}).then(function(){next(i+1);});
-    }
-    next(0);
-  });
-}
 function gcalDelete(eventId,cb){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId()+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
 function listGCalendars(cb){ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList',{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(r){return r.json();}).then(function(data){cb(data.items||[]);}).catch(function(){cb([]);});});}
 function testGCalConnection(){ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(),{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){return res.json().then(function(d){return {ok:res.ok,d:d};});}).then(function(r){if(r.ok)showToast('連線成功 ✓ 行事曆：'+(r.d.summary||CLINIC_INFO.calendarId));else showToast('連線失敗：'+((r.d.error&&r.d.error.message)||'請確認行事曆 ID'));}).catch(function(){showToast('連線失敗，請確認網路與授權');});});}
