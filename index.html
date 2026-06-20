@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>領航物理治療所 管理系統</title>
+<link rel="icon" type="image/svg+xml" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a4d68'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/></g></svg>">
 <style>
 :root{
   --navy:#1a4d68;--navy-d:#123b52;--navy-l:#eef4f7;
@@ -570,7 +571,16 @@ views.dashboard=function(){
     '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(Math.floor(stampBase*0.004))+'</span></div>'+
     '</div></div></div>'+backupCard());
 };
-function uploadLoginLogo(input){var file=input.files&&input.files[0];if(!file)return;if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}var reader=new FileReader();reader.onload=function(e){LOGIN_LOGO=e.target.result;go(_curView);showToast('診所 Logo 已更換');};reader.readAsDataURL(file);}
+function uploadLoginLogo(input){var file=input.files&&input.files[0];if(!file)return;if(file.size>1.5*1024*1024){showToast('圖片請小於 1.5MB');return;}var reader=new FileReader();reader.onload=function(e){LOGIN_LOGO=e.target.result;setFavicon();go(_curView);showToast('診所 Logo 已更換');};reader.readAsDataURL(file);}
+function setFavicon(){
+  try{
+    var link=document.getElementById('favicon');
+    if(!link){link=document.createElement('link');link.rel='icon';link.id='favicon';document.head.appendChild(link);}
+    if(LOGIN_LOGO){link.removeAttribute('type');link.href=LOGIN_LOGO;return;}
+    var svg="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='#1a4d68'/><g transform='translate(4 4)' fill='none' stroke='#fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/></g></svg>";
+    link.type='image/svg+xml';link.href='data:image/svg+xml,'+encodeURIComponent(svg);
+  }catch(e){}
+}
 
 /* ============ 路由 ============ */
 var _curView='login';
@@ -627,6 +637,7 @@ function loadFromServer(cb){
     if(s.CLINIC_INFO)Object.assign(CLINIC_INFO,s.CLINIC_INFO);
     if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
     if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;if(s.LOGIN_LOGO)LOGIN_LOGO=s.LOGIN_LOGO;if(s.REMINDER_TEMPLATE!=null)REMINDER_TEMPLATE=s.REMINDER_TEMPLATE;
+    if(typeof setFavicon==='function')setFavicon();
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
 }
@@ -639,9 +650,12 @@ function sendLineMsg(userId,message,cb){
 }
 function lineTemplates(b){
   var sv=svcOf(b.svc);
+  var startMin=(b.start!=null)?b.start:(function(){var hm=String(b.time||'00:00').split(':');return Number(hm[0])*60+(Number(hm[1])||0);})();
+  var timeRange=fmtTimeMin(startMin)+'–'+fmtTimeMin(startMin+sv.dur)+'（共 '+sv.dur+' 分鐘）';
+  var terms='\n\n⚠️\n因故遲到者恕不延後治療時段，而費用將以原先預約項目價格進行收費。\n為保障其他學員預約需求，如需取消或更改時間，請於「前一工作日18:00前」告知。\n\n提醒您：如欲一次性預約≥2次以上的課程，需先預付所有預約的款項。\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
   return {
-    confirm:'【領航物理治療所】\n您的預約已確認！\n📅 '+b.date+'　'+b.time+'\n🏥 '+sv.name+'\n如需更改請來電 (02)2826-1698',
-    remind:'【領航物理治療所】\n提醒您明日有預約 🔔\n📅 '+b.date+'　'+b.time+'\n🏥 '+sv.name+'\n請準時到診，謝謝！',
+    confirm:'【領航物理治療所】\n您的預約已確認 ✅\n以下為您的預約資訊：\n📅 '+b.date+'\n⏰ '+timeRange+'\n🏥 '+sv.name+'\n🩺 治療師：'+tName(b.t)+'\n期待與您見面，如需更改請來電 (02)2826-1698'+terms,
+    remind:'【領航物理治療所】\n親愛的貴賓，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 '+b.date+'\n⏰ '+timeRange+'\n🏥 '+sv.name+'\n🩺 治療師：'+tName(b.t)+'\n如有異動請於前一工作日來電 (02)2826-1698'+terms,
     cancel:'【領航物理治療所】\n很抱歉，您於 '+b.date+' '+b.time+' 的預約已取消。\n如需重新預約請來電 (02)2826-1698。',
     complete:'【領航物理治療所】\n感謝您今日的到診 🙏\n如有任何不適歡迎回診或來電詢問。'
   };
@@ -897,15 +911,23 @@ function updateCoTotal(){
   var bd=document.getElementById('coBreakdown');
   if(bd){bd.style.display=disc>0?'block':'none';if(disc>0){var op=document.getElementById('coOrigPrice');var da=document.getElementById('coDiscAmt');var fa=document.getElementById('coFinalBreak');if(op)op.textContent=fmtNT(base);if(da)da.textContent='- '+fmtNT(disc);if(fa)fa.textContent=fmtNT(final);}}
 }
+function pkgKeyForBooking(b){var p=getPatient(b.phone);return p?ptKey(p):(b.phone||'');}
 function checkoutModal(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
   var sv=svcOf(b.svc),c=tColor(b.t);_coPay='cash';_coSvcPrice=sv.price;_coDiscount=0;
-  _coPkg=findUsablePkg(b.phone,b.svc);
+  var pkey=pkgKeyForBooking(b);
+  _coPkg=findUsablePkg(pkey,b.svc);
+  var allPkgs=getPkgs(pkey);
   var pkgPill=_coPkg?'<button class="pay-pill" data-p="package" onclick="setCoPay(\'package\')">使用課程（剩 '+(_coPkg.total-_coPkg.used)+' 堂）</button>':'';
+  var pkgHint='';
+  if(!_coPkg){
+    if(allPkgs.length){pkgHint='<div style="background:#fdf3e0;border:1px solid #f0d090;color:#8a5a12;border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;line-height:1.7">此病患有 '+allPkgs.length+' 項課程，但都不適用於「'+esc(sv.name)+'」或堂數已用完，因此無法以課程扣抵。可到病患資料的「消費記錄」確認課程適用範圍。</div>';}
+    else{pkgHint='<div style="background:var(--navy-l);border:1px solid #bcd6e6;color:var(--navy);border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;line-height:1.7">此病患尚未購買課程，無「使用課程」選項。若要以課程扣抵，請先到「病患管理 →（點此病患）編輯 → 消費記錄分頁 → 購買課程」。</div>';}
+  }
   modal('<div class="modal-head" style="background:'+c+'">結帳 - '+esc(b.name)+'<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body">'+
     '<div style="background:var(--mint-l);border:1.5px solid var(--mint);border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><div style="font-size:13px;color:var(--mint-d)">'+esc(sv.name)+'</div><div style="font-size:11px;color:var(--slate)">'+b.date+' '+b.time+'</div></div><div style="font-size:24px;font-weight:800;color:var(--mint-d)" id="coAmount">'+fmtNT(sv.price)+'</div></div>'+
-    '<div class="field"><label>付款方式</label><div class="pay-pills" id="coPay"><button class="pay-pill sel" data-p="cash" onclick="setCoPay(\'cash\')">現金</button><button class="pay-pill" data-p="transfer" onclick="setCoPay(\'transfer\')">匯款</button><button class="pay-pill" data-p="card" onclick="setCoPay(\'card\')">刷卡</button>'+pkgPill+'</div></div>'+
+    '<div class="field"><label>付款方式</label><div class="pay-pills" id="coPay"><button class="pay-pill sel" data-p="cash" onclick="setCoPay(\'cash\')">現金</button><button class="pay-pill" data-p="transfer" onclick="setCoPay(\'transfer\')">匯款</button><button class="pay-pill" data-p="card" onclick="setCoPay(\'card\')">刷卡</button>'+pkgPill+'</div></div>'+pkgHint+
     '<div id="coPkgNote" style="display:none;background:var(--mint-l);border:1px solid var(--mint);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--mint-d)"></div>'+
     '<div id="coTransfer" style="display:none;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:10px;padding:12px 14px;margin-bottom:10px"><div class="grid2"><div class="field" style="margin-bottom:0"><label>匯款後五碼 *</label><input id="co-last5" maxlength="5" inputmode="numeric" placeholder="例：12345" style="font-family:monospace;letter-spacing:2px" oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"></div><div class="field" style="margin-bottom:0"><label>匯款日期 *</label><input id="co-tdate" type="date" style="width:150px;max-width:100%"></div></div></div>'+
     '<div style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><div style="font-size:11px;font-weight:700;color:var(--slate);letter-spacing:.5px;margin-bottom:8px">🔒 內部減免（不顯示於收據）</div>'+
@@ -922,7 +944,7 @@ function doCheckout(id){
   var sv0=svcOf(b.svc);
   if(!sv0||sv0.price===0&&sv0.name==='-'){showToast('找不到對應服務，無法結帳');return;}
   var disc=Math.max(0,Number((document.getElementById('coDiscount')||{}).value)||0);var discNote=((document.getElementById('coDiscountNote')||{}).value||'').trim();
-  if(_coPay==='package'){var pkg=findUsablePkg(b.phone,b.svc);if(!pkg){showToast('找不到可使用的課程');return;}pkg.used++;var pkgFinal=Math.max(0,pkg.unitPrice-disc);b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote});closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));return;}
+  if(_coPay==='package'){var pkg=findUsablePkg(pkgKeyForBooking(b),b.svc);if(!pkg){showToast('找不到可使用的課程');return;}pkg.used++;var pkgFinal=Math.max(0,pkg.unitPrice-disc);b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote});closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':''));return;}
   if(_coPay==='transfer'){var last5=(document.getElementById('co-last5').value||'').trim();var tdate=document.getElementById('co-tdate').value;if(last5.length!==5){showToast('請輸入匯款後五碼');return;}if(!tdate){showToast('請選擇匯款日期');return;}b.transferLast5=last5;b.transferDate=tdate;}else{b.transferLast5='';b.transferDate='';}
   var finalAmt=Math.max(0,sv0.price-disc);b.status='completed';b.pay=_coPay;b.paidAmount=finalAmt;
   PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name,amount:finalAmt,pay:_coPay,transferLast5:b.transferLast5||'',transferDate:b.transferDate||'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote});
@@ -1407,6 +1429,7 @@ window.addEventListener('unhandledrejection',function(ev){
   __safeErrorToast(ev.reason&&ev.reason.message);
 });
 function __bootApp(){
+  if(typeof setFavicon==='function')setFavicon();
   var chk=__selfCheck();
   if(!chk.ok){
     var msg='<div style="padding:30px;font-family:monospace;font-size:13px;line-height:1.9"><b style="color:#c00;font-size:15px">⚠ 自我檢查發現缺漏</b><br><br>';
