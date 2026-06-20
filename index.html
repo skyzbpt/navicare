@@ -456,6 +456,12 @@ views.login=function(){
     '<div style="margin-top:20px;font-size:11px;color:var(--slate)">僅限診所授權帳號登入</div></div></div>';
 };
 function showLoginError(msg){var el=document.getElementById('loginErr');if(el){el.style.display='block';el.textContent=msg;}else{showToast(msg);}}
+function loadLoginLogo(){
+  if(!RENDER_URL||LOGIN_LOGO)return;
+  fetch(RENDER_URL+'/login-logo').then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(d&&d.logo){LOGIN_LOGO=d.logo;if(typeof setFavicon==='function')setFavicon();if(_curView==='login')document.getElementById('frame').innerHTML=views.login();}
+  }).catch(function(){});
+}
 function showUnauthorizedModal(email){
   modal('<div class="modal-head" style="background:var(--danger)">無法登入<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body" style="text-align:center;padding:26px 22px">'+
@@ -595,6 +601,7 @@ function go(v){
   try{document.getElementById('frame').innerHTML=views[v]();}
   catch(e){console.error('views.'+v+' error:',e);document.getElementById('frame').innerHTML='<div style="padding:40px;text-align:center;color:var(--danger)">頁面載入失敗：'+esc(e.message)+'<br><button class="btn gray" style="margin-top:14px" onclick="go(\''+v+'\')">重試</button></div>';}
   _curView=v;
+  if(v==='login')loadLoginLogo();
   if(v==='bookings')calToday();
   if(v==='book')ensureCatalogForPublic('book');
 }
