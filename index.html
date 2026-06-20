@@ -1391,6 +1391,7 @@ window.addEventListener('unhandledrejection',function(ev){
   console.error('未處理的非同步錯誤:',ev.reason);
   __safeErrorToast(ev.reason&&ev.reason.message);
 });
+function __bootApp(){
   var chk=__selfCheck();
   if(!chk.ok){
     var msg='<div style="padding:30px;font-family:monospace;font-size:13px;line-height:1.9"><b style="color:#c00;font-size:15px">⚠ 自我檢查發現缺漏</b><br><br>';
