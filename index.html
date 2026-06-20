@@ -665,8 +665,27 @@ var _lineUsers=[];
 function lineBoundPatient(userId){return PATIENTS.find(function(p){return p.lineId===userId;});}
 function lineSyncSilent(){
   if(!RENDER_URL){showToast('請先設定 RENDER_URL');return;}
-  showToast('同步 LINE 好友中…');
-  fetch(RENDER_URL+'/line-users').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){_lineUsers=Array.isArray(data)?data:(data.users||[]);if(!_lineUsers.length){showToast('尚無 LINE 好友資料');return;}autoImportLine(false);go('patients');}).catch(function(){showToast('無法連線至 LINE 伺服器');});
+  if(!currentUser){showToast('請先登入後再同步');return;}
+  ensureGCal(function(){
+    showToast('同步 LINE 好友中…（Render 若休眠首次需等約 30 秒）');
+    fetch(RENDER_URL+'/line-users').then(function(r){
+      if(r.status===401||r.status===403)throw new Error('AUTH');
+      if(!r.ok)return r.text().then(function(t){throw new Error('伺服器回 HTTP '+r.status+(t?'：'+t.slice(0,100):''));});
+      return r.json();
+    }).then(function(data){
+      _lineUsers=Array.isArray(data)?data:(data.users||[]);
+      if(!_lineUsers.length){showToast('伺服器連線正常，但目前沒有 LINE 好友資料');return;}
+      autoImportLine(false);go('patients');
+    }).catch(function(e){
+      var m=(e&&e.message)?e.message:'';
+      if(m==='AUTH'){showToast('登入已逾時或帳號未授權，請重新登入後再同步');return;}
+      if(!m||/Failed to fetch|NetworkError|Load failed/i.test(m)){
+        showToast('無法連線：可能 Render 伺服器休眠中、或 CORS 未放行此網域（檢查 ALLOWED_ORIGINS）。請稍候重試。');
+      }else{
+        showToast('LINE 同步失敗：'+m);
+      }
+    });
+  });
 }
 function autoImportLine(silent){
   try{
