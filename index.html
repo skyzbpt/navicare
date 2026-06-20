@@ -353,7 +353,7 @@ var ROLE_PAGES={
 };
 var ROLE_LABELS={admin:'管理員',therapist:'治療師'};
 var currentUser=null;
-var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false,loginPicked=false,gmailToken=null;
+var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false,gmailToken=null;
 
 /* ============ 共用工具 ============ */
 function svcOf(id){var s=SERVICES.find(function(x){return x.id===id;});return s||{name:'-',price:0,dur:0};}
@@ -481,7 +481,7 @@ function triggerGoogleLogin(){
   function finishLogin(token,expIn){
     fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}}).then(function(res){return res.json();}).then(function(info){
       var email=(info.email||'');var cfg=EMAIL_WHITELIST[email]||EMAIL_WHITELIST[email.toLowerCase()];
-      if(!cfg){setLoading(false);try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}loginPicked=false;showUnauthorizedModal(email);return;}
+      if(!cfg){setLoading(false);try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}showUnauthorizedModal(email);return;}
       gcalToken=token;gmailToken=token;gcalTokenExp=Date.now()+(Number(expIn||3600)-60)*1000;gcalConsented=true;
       currentUser={email:email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
       loadFromServer(function(){setLoading(false);go((currentUser.pages.indexOf('dashboard')>-1)?'dashboard':(currentUser.pages[0]||'login'));});
@@ -862,7 +862,7 @@ function renderCal(){
 }
 views.bookings=function(){
   return shell('bookings','預約管理','<div id="calMount"></div>',
-    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button><div class="row" id="calPills" style="gap:5px">'+calPills()+'</div><button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn ghost sm" onclick="syncAllCalendar()">同步行事曆</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
+    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button><div class="row" id="calPills" style="gap:5px">'+calPills()+'</div><button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn ghost sm" onclick="pullSubmissions()">匯入線上送出</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
 };
 function addBkModal(){
   var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
@@ -880,6 +880,38 @@ function addBkModal(){
 }
 function searchBkPatient(q){var box=document.getElementById('nb-results');if(!box)return;q=(q||'').trim().toLowerCase();if(!q){box.innerHTML='';return;}var hits=PATIENTS.filter(function(p){return (p.name||'').toLowerCase().indexOf(q)>-1||(p.phone||'').toLowerCase().indexOf(q)>-1;}).slice(0,6);if(!hits.length){box.innerHTML='<div style="font-size:12px;color:var(--slate);padding:6px 4px">查無此病患，可直接於下方填寫新增</div>';return;}box.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden">'+hits.map(function(p){return '<div onclick="pickBkPatient(\''+esc(ptKey(p))+'\')" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><div><span style="font-weight:700;font-size:13px">'+esc(p.name)+'</span> <span style="font-size:11px;color:var(--slate)">'+(p.phone?esc(p.phone):'待補電話')+'</span></div>'+(p.lineId?'<span class="tag green">LINE</span>':'')+'</div>';}).join('')+'</div>';}
 function pickBkPatient(key){var p=getPatient(key);if(!p)return;document.getElementById('nb-name').value=p.name||'';document.getElementById('nb-phone').value=p.phone||'';document.getElementById('nb-results').innerHTML='';document.getElementById('nb-search').value=p.name;showToast('已帶入 '+p.name);}
+function copyBkModal(id){
+  var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
+  if(!SERVICES.length){showToast('請先到「服務與課程」建立服務項目');return;}
+  var hh=Math.floor(b.start/60),mm=b.start%60;var timeVal=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  var nextDate=b.date;try{var d=new Date(b.date+'T00:00:00');d.setDate(d.getDate()+7);nextDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){}
+  var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'"'+(t.id===b.t?' selected':'')+'>'+t.name+'</option>';}).join('');
+  var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'"'+(s.id===b.svc?' selected':'')+'>'+s.name+' ('+s.dur+'分)</option>';}).join('');
+  modal('<div class="modal-head" style="background:'+tColor(b.t)+'">複製預約<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body">'+
+    '<div class="banner info"><span>i</span><div>已帶入 <b>'+esc(b.name)+'</b> 原本的服務與治療師，日期預設為一週後（'+esc(nextDate)+'），改成你要的時間即可。</div></div>'+
+    '<div class="grid2"><div class="field"><label>姓名</label><input id="cb-name" value="'+esc(b.name)+'"></div><div class="field"><label>電話</label><input id="cb-phone" value="'+esc(b.phone)+'"></div></div>'+
+    '<div class="grid2"><div class="field"><label>治療師</label><select id="cb-t">'+tOpts+'</select></div><div class="field"><label>服務</label><select id="cb-svc">'+sOpts+'</select></div></div>'+
+    '<div class="grid2"><div class="field"><label>日期</label><input id="cb-date" type="date" value="'+esc(nextDate)+'"></div><div class="field"><label>時間</label><input id="cb-time" type="time" value="'+timeVal+'" min="08:00" max="22:00" step="900"></div></div>'+
+    '<div class="field"><label>備註</label><textarea id="cb-note" style="height:54px;resize:none">'+esc(b.note||'')+'</textarea></div>'+
+    '<label class="row" style="font-size:13px;gap:8px;margin-top:4px"><input type="checkbox" id="cb-line" style="width:auto"> 建立後推播 LINE 預約確認（需已綁定）</label>'+
+    '</div><div class="modal-foot"><button class="btn gray" onclick="bkDetail('+id+')">返回</button><button class="btn" onclick="submitCopyBk()">建立複製</button></div>');
+}
+function submitCopyBk(){
+  var name=document.getElementById('cb-name').value.trim();var phone=document.getElementById('cb-phone').value.trim();var date=document.getElementById('cb-date').value;var tv=document.getElementById('cb-time').value;
+  if(!name||!phone||!date||!tv){showToast('請填寫完整資料');return;}
+  var tid=document.getElementById('cb-t').value;
+  if(isLeaveDay(tid,date)){showToast(tName(tid)+' 於 '+date+' 為休假日，無法預約');return;}
+  var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var svcId=document.getElementById('cb-svc').value;var endMin=startMin+svcOf(svcId).dur;
+  if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間（含療程時長）');return;}
+  if(!isWithinShift(tid,date,startMin,svcOf(svcId).dur)){showToast('此時段非 '+tName(tid)+' 的上班時間，無法預約');return;}
+  var id=++BOOKING_ID;var b={id:id,name:name,phone:phone,t:tid,svc:svcId,date:date,start:startMin,time:tv,note:document.getElementById('cb-note').value||'',pay:'cash',status:'confirmed'};
+  BOOKINGS.push(b);BK_LOG[id]=[new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)+' 由複製建立'];
+  if(!getPatient(phone))PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});
+  var notify=document.getElementById('cb-line')&&document.getElementById('cb-line').checked;
+  closeModal();renderCal();showToast('已複製預約至 '+date+' '+tv);syncOne(id);
+  if(notify){var p=getPatient(phone);if(p&&p.lineId){sendLineMsg(p.lineId,lineTemplates(b).confirm);}}
+}
 function submitBk(){
   var name=document.getElementById('nb-name').value.trim();var phone=document.getElementById('nb-phone').value.trim();var date=document.getElementById('nb-date').value;var tv=document.getElementById('nb-time').value;
   if(!name||!phone||!date||!tv){showToast('請填寫完整資料');return;}
@@ -910,7 +942,7 @@ function bkDetail(id){
     '<div class="grid2"><div class="field"><label>日期</label><input id="eb-date" type="date" value="'+b.date+'"></div><div class="field"><label>時間</label><input id="eb-time" type="time" value="'+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+'" min="08:00" max="22:00" step="900"></div></div>'+
     '<div class="field"><label>備註</label><textarea id="eb-note" style="height:60px;resize:vertical">'+esc(b.note)+'</textarea></div></div>'+
     '<div class="edit-panel" id="bkp-status"><div class="sec-label">預約狀態</div><div class="status-picker" id="bkSp">'+sp+'</div></div>'+
-    '<div class="modal-foot" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn danger sm" onclick="delBk('+id+')">刪除</button><button class="btn ghost sm" onclick="checkoutModal('+id+')">結帳</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="lineNotifyModal('+id+')">LINE 通知</button></div><button class="btn" onclick="saveBk('+id+')">儲存</button></div>');
+    '<div class="modal-foot" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn danger sm" onclick="delBk('+id+')">刪除</button><button class="btn gray sm" onclick="copyBkModal('+id+')">複製</button><button class="btn ghost sm" onclick="checkoutModal('+id+')">結帳</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="lineNotifyModal('+id+')">LINE 通知</button></div><button class="btn" onclick="saveBk('+id+')">儲存</button></div>');
 }
 function bkTab(btn,name){btn.parentNode.querySelectorAll('.edit-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');['info','status'].forEach(function(n){document.getElementById('bkp-'+n).classList.toggle('active',n===name);});}
 function pickBkStatus(id,s){
@@ -1333,7 +1365,7 @@ views.packages=function(){
   var svcCard='<div class="card"><div class="card-head"><h3>服務項目</h3><button class="btn sm" onclick="addSvcModal()">+ 新增服務</button></div><div class="card-body flush"><table><thead><tr><th>項目</th><th>時長</th><th>費用</th><th>說明</th><th></th></tr></thead><tbody>'+sRows+'</tbody></table>'+(SERVICES.length?'':'<div class="empty">尚無服務項目，點右上角「新增服務」建立。</div>')+'</div></div>';
   var cards=PACKAGES.map(function(p){var primary=pkgPrimarySvc(p);var sv=svcOf(primary);var full=sv.price*p.sessions;var disc=full?Math.round(p.price/full*100):100;var per=p.sessions?Math.round(p.price/p.sessions):0;var svcLabel=pkgSvcLabel(p);return '<div class="pkg-card" onclick="editPkgModal('+p.id+')"><div class="pkg-name">'+esc(p.name)+'</div><div class="pkg-svc" title="'+esc(svcLabel)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(svcLabel)+'</div><div><span class="pkg-price">'+fmtNT(p.price)+'</span>'+(p.price<full&&p.price>0?'<span class="pkg-orig">'+fmtNT(full)+'</span>':'')+'</div><div class="row" style="gap:5px"><span class="tag mint">'+p.sessions+' 堂</span><span class="tag gray">每堂 '+fmtNT(per)+'</span>'+(p.price<full&&p.price>0?'<span class="tag amber">'+disc+' 折</span>':'')+'</div>'+(p.desc?'<div class="pkg-desc">'+esc(p.desc)+'</div>':'')+'</div>';}).join('');
   var pkgCard='<div class="card"><div class="card-head"><h3>課程方案（堂數套餐）</h3><button class="btn sm" onclick="addPkgModal()">+ 新增課程</button></div><div class="card-body"><div class="pkg-grid">'+cards+'<div class="pkg-card pkg-add" onclick="addPkgModal()"><div style="font-size:30px;font-weight:300">+</div><div>新增課程</div></div></div></div></div>';
-  return shell('packages','服務與課程',svcCard+pkgCard);
+  return shell('packages','服務與課程',svcCard+pkgCard,'<button class="btn ghost sm" onclick="publishCatalog()">發布到線上預約</button>');
 };
 function addSvcModal(){modal('<div class="modal-head" style="background:var(--navy)">新增服務項目<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>服務名稱</label><input id="ns-name" placeholder="例：肌筋膜疼痛治療"></div><div class="grid2"><div class="field"><label>時長（分鐘）</label><input id="ns-dur" type="number" value="60" min="15" step="15"></div><div class="field"><label>費用 (NT$)</label><input id="ns-price" type="number" value="1500" min="0"></div></div><div class="field"><label>說明</label><input id="ns-desc" placeholder="服務簡介"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSvc()">新增</button></div>');}
 function submitSvc(){var name=document.getElementById('ns-name').value.trim();if(!name){showToast('請填寫服務名稱');return;}SERVICES.push({id:'s'+(++SVC_ID),name:name,dur:Number(document.getElementById('ns-dur').value)||60,price:Number(document.getElementById('ns-price').value)||0,desc:document.getElementById('ns-desc').value||''});closeModal();go('packages');showToast('服務項目已新增');}
