@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>領航物理治療所 管理系統</title>
 <link rel="icon" type="image/svg+xml" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a4d68'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/></g></svg>">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js" onerror="window._liffSdkErr=true"></script>
 <style>
 :root{
   --navy:#1a4d68;--navy-d:#123b52;--navy-l:#eef4f7;
@@ -181,6 +182,14 @@ input[type="date"].date-empty:focus::before{content:none}
 .cal-pill.active{background:var(--navy);border-color:var(--navy);color:#fff}
 .cal-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .intake-wrap{min-height:100vh;background:var(--bg)}
+.liff-profile{display:flex;align-items:center;gap:12px;background:#f0fff8;border:1px solid #b2f0d8;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.liff-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--mint)}
+.liff-avatar-fb{width:44px;height:44px;border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center;color:var(--navy);font-weight:700;font-size:18px;flex-shrink:0;border:2px solid var(--mint)}
+.liff-name{font-weight:700;font-size:13px}
+.liff-sub{font-size:11px;color:var(--mint-d)}
+.liff-login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;background:#06C755;color:#fff;border:none;border-radius:var(--r-sm);font-size:14px;font-weight:700;cursor:pointer;margin-bottom:14px}
+.liff-login-btn:hover{background:#05b34c}
+.liff-login-btn svg{width:20px;height:20px}
 .intake-top{background:var(--navy);color:#fff;padding:20px 24px}
 .intake-steps{display:flex;gap:4px;padding:18px 24px 0;max-width:640px;margin:0 auto}
 .istep{flex:1;height:4px;border-radius:2px;background:var(--mist)}
@@ -319,6 +328,14 @@ var BODY_REGIONS=['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂�
 var PT_PACKAGES={};
 var PT_PKG_ID=5000;
 var RENDER_URL='https://line-webhook-x1ux.onrender.com';
+/* ── LINE LIFF ──
+   1. 到 LINE Developers Console 建立 LIFF App（type: Full / Tall）
+   2. 將 LIFF ID 填入下方字串，例如 '1234567890-AbCdEfGh'
+   3. Endpoint URL 設定為本頁網址加 ?view=book               */
+var LIFF_ID='';   /* ← 填入你的 LIFF ID */
+var _liffProfile=null;  /* {userId, displayName, pictureUrl} */
+var _liffReady=false;
+var _liffError=false;
 var _resetDone=false;
 /* 安全性：自動為所有後台 API 請求帶上登入者的 Google 權杖，讓伺服器能驗證身分。
    只影響呼叫 RENDER_URL 的請求；公開端點會忽略此標頭，無害。 */
@@ -1482,6 +1499,7 @@ function restoreReminderTpl(){REMINDER_TEMPLATE='';go('clinic');showToast('已�
 
 function clinicLinks(){var base=window.location.origin+window.location.pathname;return {book:base+'?view=book',intake:base+'?view=intake'};}
 function copyText(t){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){showToast('已複製連結');}).catch(function(){showToast('複製失敗，請長按手動複製');});}else{showToast('此環境不支援自動複製，請長按連結複製');}}
+function saveLiffId(){var v=(document.getElementById('liff-id-input')||{}).value||'';LIFF_ID=v.trim();_liffReady=false;_liffProfile=null;_liffError=false;saveAll&&saveAll();showToast(LIFF_ID?'LIFF ID 已儲存':'LIFF ID 已清除');}
 function ensureQRLib(cb){
   if(typeof QRCode!=='undefined'){cb();return;}
   var existing=document.getElementById('__qrlib');
@@ -1500,11 +1518,24 @@ function renderClinicQRs(){
 }
 function clinicLinksCard(){
   var L=clinicLinks();
-  var liffIntake=window.location.origin+window.location.pathname.replace('preview.html','liff-intake.html');
   function block(title,desc,url,qrId,copyExpr,color){
     return '<div style="flex:1;min-width:250px;border:1px solid var(--line);border-radius:12px;padding:16px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span style="width:8px;height:8px;border-radius:50%;background:'+color+';flex-shrink:0"></span><b style="font-size:14px">'+title+'</b></div><div style="font-size:11px;color:var(--slate);margin-bottom:12px">'+desc+'</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div id="'+qrId+'" style="width:120px;height:120px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:8px"></div><div style="flex:1;min-width:160px"><div style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg);border-radius:8px;padding:9px 11px;margin-bottom:8px;line-height:1.6">'+esc(url)+'</div><button class="btn sm" onclick="'+copyExpr+'">複製連結</button></div></div></div>';
   }
-  return '<div class="card"><div class="card-head"><h3>線上預約與初診表單連結</h3><span class="tag mint">分享給個案</span></div><div class="card-body"><div class="banner info"><span>i</span><div>把連結或 QR code 分享給個案：貼到 LINE 官方帳號、IG 簡介，或印出 QR 貼在櫃台。個案線上送出的預約，記得回「預約管理」按「匯入預約」拉進後台。</div></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+block('線上預約','客戶自助選服務、治療師、時段',L.book,'qr-book','copyText(clinicLinks().book)','var(--mint)')+block('初診表單（網頁版）','任何人皆可填，無需 LINE',L.intake,'qr-intake','copyText(clinicLinks().intake)','var(--navy)')+block('初診表單（LINE版）','已加好友者自動帶入姓名、驗證身分',liffIntake,'qr-liff','copyText(\''+liffIntake+'\')','var(--line-green)')+'</div><div class="banner" style="margin-top:14px;background:#f0fff8;border-color:#b2f0d8;color:#06C755"><span style="color:#06C755">💡</span><div><b>使用建議：</b>優先推播「LINE版」給已綁定好友的病患（更快），其他人才用「網頁版」。</div></div></div></div>';
+  var liffStatus=LIFF_ID
+    ?'<span class="tag green">已設定：'+esc(LIFF_ID)+'</span>'
+    :'<span class="tag gray">未設定</span>';
+  var liffCard='<div class="card"><div class="card-head"><h3>LINE LIFF 設定</h3>'
+    +'<div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:#06C755"></div><span style="font-size:12px;font-weight:600;color:#06C755">LINE</span></div></div>'
+    +'<div class="card-body"><div class="banner info"><span>i</span><div>'
+    +'① 至 <b>LINE Developers Console</b> → 建立 LIFF App（Type 建議選 <b>Full</b>）<br>'
+    +'② Endpoint URL 設為本頁網址＋<code style="background:#f0f0f0;padding:1px 4px;border-radius:4px">?view=book</code><br>'
+    +'③ 將 LIFF ID 貼入下方儲存；分享 LIFF URL 給個案即可在 LINE 內預約</div></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="font-size:13px;font-weight:600">目前狀態：</div>'+liffStatus+'</div>'
+    +'<div class="row" style="gap:8px"><div class="field" style="flex:1;margin:0"><input id="liff-id-input" value="'+esc(LIFF_ID)+'" placeholder="例：1234567890-AbCdEfGh" style="font-family:monospace"></div>'
+    +'<button class="btn" onclick="saveLiffId()">儲存</button></div>'
+    +(LIFF_ID?'<div style="margin-top:12px"><div style="font-size:12px;color:var(--slate);margin-bottom:6px">LIFF URL（分享此連結給個案）</div><div style="display:flex;gap:8px;align-items:center"><div style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg);border-radius:8px;padding:9px 11px;flex:1">https://liff.line.me/'+esc(LIFF_ID)+'</div><button class="btn sm" onclick="copyText(\'https://liff.line.me/'+esc(LIFF_ID)+'\')">複製</button></div></div>':'')
+    +'</div></div>';
+  return '<div class="card"><div class="card-head"><h3>線上預約與初診表單連結</h3><span class="tag mint">分享給個案</span></div><div class="card-body"><div class="banner info"><span>i</span><div>把連結或 QR code 分享給個案：貼到 LINE 官方帳號、IG 簡介，或印出 QR 貼在櫃台。個案線上送出的預約，記得回「預約管理」按「匯入預約」拉進後台。</div></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+block('線上預約','客戶自助選服務、治療師、時段',L.book,'qr-book','copyText(clinicLinks().book)','var(--mint)')+block('初診表單','首次就診前填寫基本資料與同意書',L.intake,'qr-intake','copyText(clinicLinks().intake)','var(--navy)')+'</div></div></div>'+liffCard;
 }
 views.clinic=function(){
   var tRows=THERAPISTS.map(function(t){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';return '<tr><td><div class="t-name">'+t.name+'</div><div class="t-sub">'+esc(t.title)+'</div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
@@ -1542,15 +1573,158 @@ var _catalogLoaded=false;
 function applyCatalog(cat){if(!cat)return;if(Array.isArray(cat.services)){SERVICES.length=0;cat.services.forEach(function(s){SERVICES.push(s);});}if(Array.isArray(cat.packages)){PACKAGES.length=0;cat.packages.forEach(function(p){PACKAGES.push(p);});}if(Array.isArray(cat.therapists)&&cat.therapists.length){THERAPISTS=cat.therapists.map(function(t){return {id:t.id,name:t.name,title:t.title||'物理治療師',base:0,rate:0,workDays:[],week:t.week||{},leaves:t.leaves||[]};});THERAPISTS.forEach(function(t){TN[t.id]=t.name;});cat.therapists.forEach(function(t){if(t.color)TC[t.id]=t.color;});}}
 function ensureCatalogForPublic(view){if(currentUser||_catalogLoaded||!RENDER_URL)return;_catalogLoaded=true;fetch(RENDER_URL+'/catalog').then(function(r){return r.json();}).then(function(cat){applyCatalog(cat);if(typeof views[view]==='function')document.getElementById('frame').innerHTML=views[view]();}).catch(function(){});}
 function submitToServer(type,data){if(!RENDER_URL)return Promise.resolve(false);return fetch(RENDER_URL+'/submit-'+type,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.ok;}).catch(function(){return false;});}
+/* ============ LIFF 初始化 ============ */
+function initLiff(onReady){
+  if(window._liffSdkErr||typeof liff==='undefined'){_liffError=true;if(onReady)onReady();return;}
+  if(!LIFF_ID){_liffError=true;if(onReady)onReady();return;}
+  if(_liffReady){if(onReady)onReady();return;}
+  liff.init({liffId:LIFF_ID}).then(function(){
+    _liffReady=true;
+    if(liff.isLoggedIn()){
+      liff.getProfile().then(function(p){
+        _liffProfile={userId:p.userId,displayName:p.displayName,pictureUrl:p.pictureUrl||''};
+        if(onReady)onReady();
+      }).catch(function(){if(onReady)onReady();});
+    }else{
+      /* 在 LINE 瀏覽器內但未登入，自動登入 */
+      if(liff.isInClient()){liff.login();}
+      else{if(onReady)onReady();}
+    }
+  }).catch(function(e){
+    console.warn('LIFF init error:',e);
+    _liffError=true;
+    if(onReady)onReady();
+  });
+}
+function liffProfileBlock(){
+  if(!_liffReady||_liffError||!_liffProfile)return '';
+  var p=_liffProfile;
+  var avatarHtml=p.pictureUrl
+    ?'<img class="liff-avatar" src="'+esc(p.pictureUrl)+'" onerror="this.outerHTML=\'<div class=liff-avatar-fb>'+esc((p.displayName||'?').slice(0,1))+'</div>\'">'
+    :'<div class="liff-avatar-fb">'+esc((p.displayName||'?').slice(0,1))+'</div>';
+  return '<div class="liff-profile">'+avatarHtml+'<div><div class="liff-name">'+esc(p.displayName)+'</div><div class="liff-sub">已透過 LINE 登入 · 自動帶入姓名</div></div></div>';
+}
+function liffLoginBlock(){
+  if(_liffError||!LIFF_ID||_liffProfile)return '';
+  if(_liffReady&&!liff.isLoggedIn()){
+    return '<button class="liff-login-btn" onclick="liff.login()">'
+      +'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.067 2 11.111c0 4.525 3.2 8.307 7.544 9.445l.456.444V23l3.333-2.333C14.08 20.888 15.022 21 16 21c5.523 0 9-3.478 9-9.889C25 6.067 17.523 2 12 2z"/></svg>'
+      +'以 LINE 帳號登入（預約更便利）</button>';
+  }
+  return '';
+}
+/* 傳送 LIFF 確認訊息至 LINE 聊天室 */
+function sendLiffConfirmMsg(name,svcName,tName,date,time){
+  try{
+    if(!_liffReady||_liffError||typeof liff==='undefined')return;
+    if(!liff.isInClient())return;
+    var endH=0,endM=0;
+    try{var parts=time.split(':');var sm=Number(parts[0])*60+Number(parts[1]);var em=sm+svcOf(document.getElementById('cb-svc').value).dur;endH=Math.floor(em/60);endM=em%60;}catch(e){}
+    var endStr=endH?String(endH).padStart(2,'0')+':'+String(endM).padStart(2,'0'):'';
+    var msg='【領航物理治療所】預約確認 ✅\n'
+      +'姓名：'+name+'\n'
+      +'服務：'+svcName+'\n'
+      +'治療師：'+tName+'\n'
+      +'日期：'+date+'\n'
+      +'時間：'+time+(endStr?' – '+endStr:'')+'\n'
+      +'如需更改，請於前一工作日 18:00 前來電 (02)2826-1698\n'
+      +'感謝您的預約 🙏';
+    liff.sendMessages([{type:'text',text:msg}]).catch(function(){});
+  }catch(e){}
+}
+
 views.book=function(){
+  /* 若在非登入環境先拉 catalog */
+  ensureCatalogForPublic('book');
+  /* 初始化 LIFF，載入完畢後重繪以顯示頭像 */
+  if(!_liffReady&&!_liffError){
+    initLiff(function(){
+      var f=document.getElementById('frame');
+      if(f&&f.querySelector&&f.querySelector('#cb-name'))f.innerHTML=views.book();
+    });
+  }
   var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'">'+s.name+' ('+fmtNT(s.price)+')</option>';}).join('');
   var firstSvc=SERVICES[0]?SERVICES[0].id:'';
   var tOpts=svcProviders(firstSvc).map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
-  return '<div style="min-height:100vh;background:var(--bg);padding:24px 16px"><div style="max-width:420px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:var(--sh-md)"><div style="background:linear-gradient(135deg,var(--navy),var(--mint));color:#fff;padding:24px"><div style="font-size:19px;font-weight:700">領航物理治療所</div><div style="font-size:12px;opacity:.9">線上預約</div></div><div style="padding:22px"><div class="field"><label>姓名</label><input id="cb-name"></div><div class="field"><label>電話</label><input id="cb-phone" placeholder="09xx-xxx-xxx"></div><div class="field"><label>服務項目</label><select id="cb-svc" onchange="checkBookLeave()">'+sOpts+'</select></div><div class="field"><label>指定治療師</label><select id="cb-t" onchange="checkBookLeave()">'+tOpts+'</select></div><div class="grid2"><div class="field"><label>日期</label><input id="cb-date" type="date" min="'+todayStr()+'" value="'+todayStr()+'" onchange="checkBookLeave()"></div><div class="field"><label>時間</label><input id="cb-time" type="time" value="09:00" min="08:00" max="22:00" step="900" onchange="checkBookLeave()"></div></div><div id="cb-leave" style="display:none;background:#fef2f2;border:1px solid #fbb;border-radius:8px;padding:9px 12px;font-size:12px;color:var(--danger);margin-bottom:10px"></div><button class="btn" id="cb-submit" style="width:100%;padding:13px;margin-top:6px" onclick="customerBook()">送出預約</button><div style="font-size:11px;color:var(--slate);text-align:center;margin-top:10px">送出後將同步至後台預約管理</div></div></div></div>';
+  /* 若有 LIFF 個人資料，自動帶入姓名 */
+  var prefilledName=(_liffProfile&&_liffProfile.displayName)||'';
+  var nameVal=esc(prefilledName);
+  var nameReadonly=prefilledName?'readonly style="background:#f5f5f5;cursor:default"':'';
+  return '<div style="min-height:100vh;background:var(--bg);padding:24px 16px">'
+    +'<div style="max-width:420px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:var(--sh-md)">'
+    /* 頂部 header */
+    +'<div style="background:linear-gradient(135deg,var(--navy),var(--mint));color:#fff;padding:24px">'
+    +'<div style="display:flex;align-items:center;gap:10px">'
+    /* LINE 綠圓 icon */
+    +'<div style="width:36px;height:36px;background:#06C755;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+    +'<svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M12 2C6.477 2 2 6.067 2 11.111c0 4.525 3.2 8.307 7.544 9.445l.456.444V23l3.333-2.333C14.08 20.888 15.022 21 16 21c5.523 0 9-3.478 9-9.889C25 6.067 17.523 2 12 2z"/></svg>'
+    +'</div>'
+    +'<div><div style="font-size:19px;font-weight:700">領航物理治療所</div><div style="font-size:12px;opacity:.9">線上預約 · LINE LIFF</div></div>'
+    +'</div></div>'
+    /* 表單區 */
+    +'<div style="padding:22px">'
+    +liffProfileBlock()
+    +liffLoginBlock()
+    +'<div class="field"><label>姓名</label><input id="cb-name" value="'+nameVal+'" '+nameReadonly+' placeholder="請輸入姓名"></div>'
+    +'<div class="field"><label>電話</label><input id="cb-phone" placeholder="09xx-xxx-xxx"></div>'
+    +'<div class="field"><label>服務項目</label><select id="cb-svc" onchange="updateBookTherapists();checkBookLeave()">'+sOpts+'</select></div>'
+    +'<div class="field"><label>指定治療師</label><select id="cb-t" onchange="checkBookLeave()">'+tOpts+'</select></div>'
+    +'<div class="grid2">'
+    +'<div class="field"><label>日期</label><input id="cb-date" type="date" min="'+todayStr()+'" value="'+todayStr()+'" onchange="checkBookLeave()"></div>'
+    +'<div class="field"><label>時間</label><input id="cb-time" type="time" value="09:00" min="08:00" max="22:00" step="900" onchange="checkBookLeave()"></div>'
+    +'</div>'
+    +'<div class="field"><label>備註（選填）</label><input id="cb-note" placeholder="例：初次就診、需停車位..."></div>'
+    +'<div id="cb-leave" style="display:none;background:#fef2f2;border:1px solid #fbb;border-radius:8px;padding:9px 12px;font-size:12px;color:var(--danger);margin-bottom:10px"></div>'
+    +'<button class="btn" id="cb-submit" style="width:100%;padding:13px;margin-top:4px;font-size:15px" onclick="customerBook()">確認送出預約</button>'
+    +'<div style="font-size:11px;color:var(--slate);text-align:center;margin-top:10px">'
+    +(_liffProfile?'🟢 以 LINE 身分預約，完成後將傳送確認訊息':'送出後將同步至後台預約管理')
+    +'</div></div></div></div>';
 };
 function updateBookTherapists(){var svcId=document.getElementById('cb-svc').value;var sel=document.getElementById('cb-t');if(!sel)return;var prev=sel.value;var providers=svcProviders(svcId);sel.innerHTML=providers.length?providers.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join(''):'<option value="">（暫無治療師）</option>';if(providers.some(function(t){return t.id===prev;}))sel.value=prev;}
 function checkBookLeave(){var tid=document.getElementById('cb-t').value;var date=document.getElementById('cb-date').value;var tv=document.getElementById('cb-time').value;var svcId=document.getElementById('cb-svc').value;var box=document.getElementById('cb-leave');var btn=document.getElementById('cb-submit');var warn='';if(tid&&date){if(isLeaveDay(tid,date)){warn='⚠ 此治療師於 '+date+' 休診，請改選其他日期';}else if(tv){var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var endMin=startMin+svcOf(svcId).dur;if(startMin<480||endMin>1320){warn='⚠ 預約時間需在 08:00–22:00 之間';}else if(!isWithinShift(tid,date,startMin,svcOf(svcId).dur)){warn='⚠ 此時段非治療師看診時間，請改選其他時段';}}}if(warn){if(box){box.style.display='block';box.textContent=warn;}if(btn){btn.disabled=true;btn.style.opacity='.5';btn.style.cursor='not-allowed';}}else{if(box)box.style.display='none';if(btn){btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';}}}
-function customerBook(){var name=document.getElementById('cb-name').value.trim();var phone=document.getElementById('cb-phone').value.trim();var date=document.getElementById('cb-date').value;var tv=document.getElementById('cb-time').value;if(!name||!phone||!date||!tv){showToast('請填寫完整資料');return;}var tid=document.getElementById('cb-t').value;if(isLeaveDay(tid,date)){showToast('該治療師於 '+date+' 休診');return;}var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var svcId=document.getElementById('cb-svc').value;var endMin=startMin+svcOf(svcId).dur;if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間');return;}if(!isWithinShift(tid,date,startMin,svcOf(svcId).dur)){showToast('此時段非治療師看診時間');return;}var id=++BOOKING_ID;BOOKINGS.push({id:id,name:name,phone:phone,t:tid,svc:svcId,date:date,start:startMin,time:tv,note:'線上預約',pay:'cash',status:'confirmed'});if(!getPatient(phone))PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});if(currentUser){syncOne(id);}else{submitToServer('booking',{name:name,phone:phone,t:tid,svc:svcId,svcName:svcOf(svcId).name,date:date,time:tv,note:'線上預約'});}document.getElementById('frame').innerHTML='<div style="min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center"><div style="background:#fff;border-radius:18px;padding:40px;text-align:center;max-width:360px;box-shadow:var(--sh-md)"><div style="font-size:46px;margin-bottom:14px">&#10003;</div><h2 style="font-size:20px;margin-bottom:8px">預約已送出</h2><p style="color:var(--slate);font-size:13px;margin-bottom:22px">我們會在就診前與您確認。</p><button class="btn" onclick="go(\'book\')">再次預約</button></div></div>';showToast('預約已送出');}
+function customerBook(){
+  var nameEl=document.getElementById('cb-name');
+  var name=(nameEl?nameEl.value.trim():'')||(_liffProfile&&_liffProfile.displayName)||'';
+  var phone=document.getElementById('cb-phone').value.trim();
+  var date=document.getElementById('cb-date').value;
+  var tv=document.getElementById('cb-time').value;
+  var noteEl=document.getElementById('cb-note');
+  var extraNote=noteEl?noteEl.value.trim():'';
+  if(!name||!phone||!date||!tv){showToast('請填寫完整資料');return;}
+  var tid=document.getElementById('cb-t').value;
+  if(isLeaveDay(tid,date)){showToast('該治療師於 '+date+' 休診');return;}
+  var hm=tv.split(':');
+  var startMin=Number(hm[0])*60+Number(hm[1]);
+  var svcId=document.getElementById('cb-svc').value;
+  var endMin=startMin+svcOf(svcId).dur;
+  if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間');return;}
+  if(!isWithinShift(tid,date,startMin,svcOf(svcId).dur)){showToast('此時段非治療師看診時間');return;}
+  /* 取 LINE userId（若有 LIFF 登入） */
+  var lineUserId=(_liffProfile&&_liffProfile.userId)||'';
+  var noteStr='線上預約'+(extraNote?'・'+extraNote:'')+(lineUserId?'・LIFF':'');
+  var id=++BOOKING_ID;
+  BOOKINGS.push({id:id,name:name,phone:phone,t:tid,svc:svcId,date:date,start:startMin,time:tv,note:noteStr,pay:'cash',status:'confirmed'});
+  /* 更新 / 新增個案資料，綁定 LINE */
+  var pt=getPatient(phone);
+  if(!pt){pt={phone:phone,name:name,dob:'',idNum:'',gender:'',line:!!lineUserId,lineId:lineUserId,note:''};PATIENTS.push(pt);}
+  else if(lineUserId&&!pt.lineId){pt.lineId=lineUserId;pt.line=true;}
+  /* 送出到後端 */
+  var payload={name:name,phone:phone,t:tid,svc:svcId,svcName:svcOf(svcId).name,date:date,time:tv,note:noteStr,lineUserId:lineUserId};
+  if(currentUser){syncOne(id);}else{submitToServer('booking',payload);}
+  /* LIFF：在 LINE 瀏覽器內傳送確認訊息 */
+  sendLiffConfirmMsg(name,svcOf(svcId).name,tName(tid),date,tv);
+  /* 成功畫面 */
+  document.getElementById('frame').innerHTML=
+    '<div style="min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:20px;padding:36px 32px;text-align:center;max-width:360px;box-shadow:var(--sh-md);width:100%">'
+    +'<div style="width:64px;height:64px;background:#edfaf6;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:30px">✅</div>'
+    +'<h2 style="font-size:20px;margin-bottom:6px">預約已送出！</h2>'
+    +'<p style="color:var(--slate);font-size:13px;margin-bottom:8px">'+esc(date)+' '+esc(tv)+'<br>'+esc(svcOf(svcId).name)+'・'+esc(tName(tid))+'</p>'
+    +(_liffProfile?'<p style="font-size:12px;color:var(--mint-d);margin-bottom:20px">✉ LINE 確認訊息已傳送</p>':'<p style="color:var(--slate);font-size:12px;margin-bottom:20px">我們會在就診前與您確認。</p>')
+    +'<button class="btn" onclick="go(\'book\')" style="width:100%;padding:12px">再次預約</button>'
+    +'</div></div>';
+  showToast('預約已送出 ✓');
+}
 var PUBLISHED_SVC_IDS=null,PUBLISHED_PKG_IDS=null;
 function publishCatalogModal(){
   if(!SERVICES.length){showToast('請先建立服務項目');return;}
@@ -1656,6 +1830,11 @@ function __bootApp(){
   }
   var start='login';
   try{var v=new URLSearchParams(window.location.search).get('view');if(v==='intake'||v==='book')start=v;}catch(e){}
+  /* LIFF：進入 book 頁面時預先初始化，讓 profile 盡早就緒 */
+  if(start==='book'&&LIFF_ID&&!window._liffSdkErr){
+    initLiff(function(){go(start);});
+    return;
+  }
   go(start);
 }
 __bootApp();
