@@ -1497,7 +1497,7 @@ function updateReminderPreview(){var el=document.getElementById('rt-tpl');var bo
 function saveReminderTpl(){var el=document.getElementById('rt-tpl');if(!el)return;var v=el.value;if(!v.trim()){showToast('範本不可空白');return;}REMINDER_TEMPLATE=v;saveAll();showToast('提醒範本已儲存並同步到伺服器');}
 function restoreReminderTpl(){REMINDER_TEMPLATE='';go('clinic');showToast('已還原為預設範本');}
 
-function clinicLinks(){var base=window.location.origin+window.location.pathname;return {book:base+'?view=book',intake:base+'?view=intake'};}
+function clinicLinks(){var base=window.location.origin+window.location.pathname;return {book:base+'#book',intake:base+'?view=intake'};}
 function copyText(t){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){showToast('已複製連結');}).catch(function(){showToast('複製失敗，請長按手動複製');});}else{showToast('此環境不支援自動複製，請長按連結複製');}}
 function saveLiffId(){var v=(document.getElementById('liff-id-input')||{}).value||'';LIFF_ID=v.trim();_liffReady=false;_liffProfile=null;_liffError=false;saveAll&&saveAll();showToast(LIFF_ID?'LIFF ID 已儲存':'LIFF ID 已清除');}
 function ensureQRLib(cb){
@@ -1528,12 +1528,16 @@ function clinicLinksCard(){
     +'<div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:50%;background:#06C755"></div><span style="font-size:12px;font-weight:600;color:#06C755">LINE</span></div></div>'
     +'<div class="card-body"><div class="banner info"><span>i</span><div>'
     +'① 至 <b>LINE Developers Console</b> → 建立 LIFF App（Type 建議選 <b>Full</b>）<br>'
-    +'② Endpoint URL 設為本頁網址＋<code style="background:#f0f0f0;padding:1px 4px;border-radius:4px">?view=book</code><br>'
+    +'② Endpoint URL 複製下方網址貼入<br>'
     +'③ 將 LIFF ID 貼入下方儲存；分享 LIFF URL 給個案即可在 LINE 內預約</div></div>'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="font-size:13px;font-weight:600">目前狀態：</div>'+liffStatus+'</div>'
+    +'<div class="sec-label">Endpoint URL（貼到 LINE Developers Console）</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><div style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;flex:1">'+esc(L.book)+'</div><button class="btn sm" onclick="copyText(clinicLinks().book)">複製</button></div>'
+    +'<div class="sec-label">LIFF ID 設定</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><div style="font-size:13px;font-weight:600">目前狀態：</div>'+liffStatus+'</div>'
     +'<div class="row" style="gap:8px"><div class="field" style="flex:1;margin:0"><input id="liff-id-input" value="'+esc(LIFF_ID)+'" placeholder="例：1234567890-AbCdEfGh" style="font-family:monospace"></div>'
     +'<button class="btn" onclick="saveLiffId()">儲存</button></div>'
     +(LIFF_ID?'<div style="margin-top:12px"><div style="font-size:12px;color:var(--slate);margin-bottom:6px">LIFF URL（分享此連結給個案）</div><div style="display:flex;gap:8px;align-items:center"><div style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg);border-radius:8px;padding:9px 11px;flex:1">https://liff.line.me/'+esc(LIFF_ID)+'</div><button class="btn sm" onclick="copyText(\'https://liff.line.me/'+esc(LIFF_ID)+'\')">複製</button></div></div>':'')
+    +'</div></div>';
     +'</div></div>';
   return '<div class="card"><div class="card-head"><h3>線上預約與初診表單連結</h3><span class="tag mint">分享給個案</span></div><div class="card-body"><div class="banner info"><span>i</span><div>把連結或 QR code 分享給個案：貼到 LINE 官方帳號、IG 簡介，或印出 QR 貼在櫃台。個案線上送出的預約，記得回「預約管理」按「匯入預約」拉進後台。</div></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+block('線上預約','客戶自助選服務、治療師、時段',L.book,'qr-book','copyText(clinicLinks().book)','var(--mint)')+block('初診表單','首次就診前填寫基本資料與同意書',L.intake,'qr-intake','copyText(clinicLinks().intake)','var(--navy)')+'</div></div></div>'+liffCard;
 }
@@ -1829,7 +1833,12 @@ function __bootApp(){
     return;
   }
   var start='login';
-  try{var v=new URLSearchParams(window.location.search).get('view');if(v==='intake'||v==='book')start=v;}catch(e){}
+  try{
+    var v=new URLSearchParams(window.location.search).get('view');
+    if(v==='intake'||v==='book')start=v;
+    /* hash routing: #book */
+    if(!v&&window.location.hash==='#book')start='book';
+  }catch(e){}
   /* LIFF：進入 book 頁面時預先初始化，讓 profile 盡早就緒 */
   if(start==='book'&&LIFF_ID&&!window._liffSdkErr){
     initLiff(function(){go(start);});
