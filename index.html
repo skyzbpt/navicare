@@ -318,7 +318,7 @@ var LOGIN_LOGO='';
 var BODY_REGIONS=['頭部','頸椎','左肩','右肩','胸椎','腰椎','薦髂關節','左髖','右髖','左膝','右膝','左踝','右踝','左肘','右肘','左腕','右腕'];
 var PT_PACKAGES={};
 var PT_PKG_ID=5000;
-var RENDER_URL='https://line-webhook-x1ux.onrender.com';
+var RENDER_URL='https://navicare-5swm.onrender.com';
 var _resetDone=false;
 /* 安全性：自動為所有後台 API 請求帶上登入者的 Google 權杖，讓伺服器能驗證身分。
    只影響呼叫 RENDER_URL 的請求；公開端點會忽略此標頭，無害。 */
@@ -835,8 +835,8 @@ function pullSubmissions(silent){
     var bks=(data&&data.bookings)||[];var ins=(data&&data.intakes)||[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
     var ackIds=[],newBk=0,newIntake=0,newPt=0;
-    ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:false,lineId:'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;newIntake++;});
-    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:d.t||(THERAPISTS[0]&&THERAPISTS[0].id),svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});if(!getPatient(d.phone)){PATIENTS.push({phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});newPt++;}newBk++;});
+    ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}newIntake++;});
+    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:d.t||(THERAPISTS[0]&&THERAPISTS[0].id),svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',note:''};PATIENTS.push(existPt);}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;}newBk++;});
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
@@ -1133,6 +1133,7 @@ function ptDetail(ph){
     '<div class="grid2"><div class="field"><label>姓名</label><input id="pe-name" value="'+esc(p.name)+'"></div><div class="field"><label>電話'+(p.phone?'':' <span style="color:var(--warn)">（待補）</span>')+'</label><input id="pe-phone" value="'+esc(p.phone||'')+'" placeholder="09xx-xxx-xxx"></div></div>'+
     '<div class="grid2"><div class="field"><label>出生年月日</label><input id="pe-dob" type="date" min="1900-01-01" max="'+todayStr()+'" value="'+(p.dob||(it&&it.dob)||'')+'"></div><div class="field"><label>身分證字號</label><input id="pe-id" value="'+esc(p.idNum||(it&&it.idNum)||'')+'" style="font-family:monospace"></div></div>'+
     '<div class="field"><label>備註</label><textarea id="pe-note" style="height:50px;resize:none">'+esc(p.note||'')+'</textarea></div>'+
+    '<div class="field"><label>LINE User ID</label><div class="row" style="gap:6px">'+(p.lineId?'<input value="'+esc(p.lineId)+'" readonly style="flex:1;font-family:monospace;font-size:12px;background:#f4f8fb"><button class="btn sm ghost" onclick="copyText(\''+esc(p.lineId)+'\')">複製</button>':'<input value="（未綁定）" readonly style="flex:1;color:var(--slate);background:#f4f8fb"><button class="btn sm gray" onclick="closeModal();lineModal(\''+ph+'\')">綁定</button>')+'</div></div>'+
     (it?'<div class="banner info"><span>i</span><div>初診主訴：'+esc(it.complaint||'-')+'</div></div>':'')+'</div>'+
     '<div class="edit-panel" id="ptp-bk"><table><thead><tr><th>日期</th><th>服務</th><th>治療師</th><th>狀態</th></tr></thead><tbody>'+bkRows+'</tbody></table></div>'+
     '<div class="edit-panel" id="ptp-pay">'+ptPayPanel(ph)+'</div>'+
