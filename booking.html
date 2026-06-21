@@ -834,14 +834,15 @@ function pullSubmissions(silent){
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     var bks=(data&&data.bookings)||[];var ins=(data&&data.intakes)||[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
-    var ackIds=[],newBk=0,newIntake=0,newPt=0;
+    var ackIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0;
     ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;newIntake++;});
-    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:d.t||(THERAPISTS[0]&&THERAPISTS[0].id),svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
+    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
-      showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、'));
+      showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')+(skipBk?'（'+skipBk+' 筆因時段衝突未匯入）':''));
       if(_curView==='bookings')renderCal();else if(_curView==='patients'||_curView==='dashboard')go(_curView);
+    }else if(skipBk){showToast(skipBk+' 筆預約因時段衝突未匯入，請至預約管理手動調整');
     }else if(!silent){showToast('沒有可匯入的資料');}
     if(ackIds.length){fetch(RENDER_URL+'/ack-submissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ackIds})}).catch(function(){});}
   }).catch(function(e){if(!silent)showToast('讀取失敗：'+e.message);});
@@ -871,6 +872,23 @@ function hasLeaveConflict(tid,date,startMin,endMin){var t=THERAPISTS.find(functi
 function hasSchedule(t){return !!(t.week&&Object.keys(t.week).some(function(k){return t.week[k]&&t.week[k].length;}));}
 function isWorkingSlot(tid,ds,m){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return false;if(hasLeaveConflict(tid,ds,m,m+15))return false;var wd=new Date(ds+'T00:00:00').getDay();var sh=(t.week&&t.week[wd])||[];return sh.some(function(s){var st=hmToMin(s.start),en=hmToMin(s.end);return st<m+15&&en>m;});}
 function isWithinShift(tid,ds,startMin,durMin){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return false;if(isLeaveDay(tid,ds))return false;var dur=Number(durMin)||0;var endMin=startMin+Math.max(dur,1);if(hasLeaveConflict(tid,ds,startMin,endMin))return false;if(!hasSchedule(t))return true;var wd=new Date(ds+'T00:00:00').getDay();var sh=(t.week&&t.week[wd])||[];if(!sh.length)return false;return sh.some(function(s){var st=hmToMin(s.start),en=hmToMin(s.end);return startMin>=st&&startMin<en&&endMin<=en;});}
+/* 同治療師時段衝突檢查（嬋柔團課 s13 允許多人；excludeId 為改期時排除自己）*/
+var GROUP_SVC_IDS=['s13'];
+function slotConflict(tid,date,startMin,svcId,excludeId){
+  if(GROUP_SVC_IDS.indexOf(svcId)>-1)return null;
+  var endMin=startMin+(svcOf(svcId).dur||50);
+  var hit=null;
+  BOOKINGS.forEach(function(b){
+    if(hit)return;
+    if(b.id===excludeId)return;
+    if(b.t!==tid||b.date!==date)return;
+    if(b.status==='cancelled'||b.status==='canceled')return;
+    if(GROUP_SVC_IDS.indexOf(b.svc)>-1)return;
+    var bs=Number(b.start)||0;var be=bs+(svcOf(b.svc).dur||50);
+    if(startMin<be&&bs<endMin)hit=b;
+  });
+  return hit;
+}
 
 /* ============ 預約管理 ============ */
 var calWeek=null;var calFilter={};
@@ -962,6 +980,8 @@ function submitCopyBk(){
   var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var svcId=document.getElementById('cb-svc').value;var endMin=startMin+svcOf(svcId).dur;
   if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間（含療程時長）');return;}
   if(!isWithinShift(tid,date,startMin,svcOf(svcId).dur)){showToast('此時段非 '+tName(tid)+' 的上班時間，無法預約');return;}
+  var confC=slotConflict(tid,date,startMin,svcId);
+  if(confC){showToast('此時段 '+tName(tid)+' 已有預約（'+confC.name+' '+confC.time+'），請改選其他時段');return;}
   var id=++BOOKING_ID;var b={id:id,name:name,phone:phone,t:tid,svc:svcId,date:date,start:startMin,time:tv,note:document.getElementById('cb-note').value||'',pay:'cash',status:'confirmed'};
   BOOKINGS.push(b);BK_LOG[id]=[new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)+' 由複製建立'];
   if(!getPatient(phone))PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});
@@ -977,6 +997,8 @@ function submitBk(){
   var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var svcId=document.getElementById('nb-svc').value;var endMin=startMin+svcOf(svcId).dur;
   if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間（含療程時長）');return;}
   if(!isWithinShift(tid,date,startMin,svcOf(svcId).dur)){showToast('此時段非 '+tName(tid)+' 的上班時間，無法預約');return;}
+  var conf=slotConflict(tid,date,startMin,svcId);
+  if(conf){showToast('此時段 '+tName(tid)+' 已有預約（'+conf.name+' '+conf.time+'），請改選其他時段');return;}
   var id=++BOOKING_ID;var b={id:id,name:name,phone:phone,t:tid,svc:svcId,date:date,start:startMin,time:tv,note:document.getElementById('nb-note').value||'',pay:'cash',status:'confirmed'};
   BOOKINGS.push(b);BK_LOG[id]=[new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)+' 預約成立'];
   if(!getPatient(phone))PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});
@@ -1013,6 +1035,8 @@ function saveBk(id){
   var dur=svcOf(newSvc).dur;var endMin=newStart+dur;
   if(newStart<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間');return;}
   if(!isWithinShift(newT,newDate,newStart,dur)){showToast('此時段非 '+tName(newT)+' 的上班時間');return;}
+  var confE=slotConflict(newT,newDate,newStart,newSvc,id);
+  if(confE){showToast('此時段 '+tName(newT)+' 已有預約（'+confE.name+' '+confE.time+'），請改選其他時段');return;}
   b.name=document.getElementById('eb-name').value||b.name;b.phone=document.getElementById('eb-phone').value||b.phone;b.t=newT;b.svc=newSvc;b.date=newDate;b.start=newStart;if(tv)b.time=tv;b.note=document.getElementById('eb-note').value||'';
   var newStatus=_pendingStatus[id];var statusChanged=newStatus&&newStatus!==b.status;var prev=b.status;
   if(statusChanged)b.status=newStatus;
