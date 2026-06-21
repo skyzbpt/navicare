@@ -326,6 +326,9 @@ var _resetDone=false;
   var _f=window.fetch;
   window.fetch=function(url,opts){
     try{
+      if(typeof url==='string'&&RENDER_URL&&url.indexOf(RENDER_URL)===0){
+        console.log('[API] →',url,'｜token:',(typeof gcalToken!=='undefined'&&gcalToken)?'有':'無');
+      }
       if(typeof url==='string'&&RENDER_URL&&url.indexOf(RENDER_URL)===0&&typeof gcalToken!=='undefined'&&gcalToken){
         opts=opts||{};
         var h=opts.headers||{};
@@ -835,8 +838,8 @@ function pullSubmissions(silent){
     var bks=(data&&data.bookings)||[];var ins=(data&&data.intakes)||[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
     var ackIds=[],newBk=0,newIntake=0,newPt=0;
-    ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}newIntake++;});
-    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:d.t||(THERAPISTS[0]&&THERAPISTS[0].id),svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;}newBk++;});
+    ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;newIntake++;});
+    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:d.t||(THERAPISTS[0]&&THERAPISTS[0].id),svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
