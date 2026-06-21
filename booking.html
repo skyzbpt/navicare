@@ -459,24 +459,35 @@ function shell(active,title,body,topRight){
 }
 /* ── 通知鈴鐺 ── */
 var _notifyCount={bk:0,intake:0};
+/* 通知歷史：最多 5 筆，每筆 {id, kind, count, at, read} */
+var NOTIFY_LOG=[];
+var _lastSeen={bk:0,intake:0}; // 上次偵測到的數量，用來判斷是否有新增
+function notifyUnreadCount(){return NOTIFY_LOG.filter(function(n){return !n.read;}).length;}
 function notifyBellHTML(){
-  var n=_notifyCount.bk+_notifyCount.intake;
+  var n=notifyUnreadCount();
   var badge=n>0?'<span class="notify-badge">'+(n>99?'99+':n)+'</span>':'';
   var pulse=n>0?' has-new':'';
-  return '<button class="notify-bell'+pulse+'" onclick="openNotifyPanel()" title="線上送出通知"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'+badge+'</button>';
+  return '<button class="notify-bell'+pulse+'" onclick="openNotifyPanel()" title="通知"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'+badge+'</button>';
 }
 function refreshNotifyBell(){
   var bell=document.querySelector('.notify-bell');
-  if(!bell)return;
-  var n=_notifyCount.bk+_notifyCount.intake;
-  bell.outerHTML=notifyBellHTML();
+  if(bell)bell.outerHTML=notifyBellHTML();
 }
-// 只查數量，不匯入
+// 新增一筆通知到歷史（最多保留 5 筆）
+function addNotify(kind,count){
+  NOTIFY_LOG.unshift({id:'n'+Date.now()+Math.random().toString(36).slice(2,6),kind:kind,count:count,at:new Date().toISOString(),read:false});
+  if(NOTIFY_LOG.length>5)NOTIFY_LOG=NOTIFY_LOG.slice(0,5);
+}
+// 查詢待匯入數量；若比上次多，建立通知
 function checkPendingCount(){
   if(!RENDER_URL||!currentUser)return;
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
-    _notifyCount.bk=((data&&data.bookings)||[]).length;
-    _notifyCount.intake=((data&&data.intakes)||[]).length;
+    var bk=((data&&data.bookings)||[]).length;
+    var intake=((data&&data.intakes)||[]).length;
+    if(bk>_lastSeen.bk)addNotify('bk',bk);
+    if(intake>_lastSeen.intake)addNotify('intake',intake);
+    _lastSeen.bk=bk;_lastSeen.intake=intake;
+    _notifyCount.bk=bk;_notifyCount.intake=intake;
     refreshNotifyBell();
   }).catch(function(){});
 }
@@ -486,26 +497,87 @@ function startNotifyPolling(){
   if(_notifyTimer)clearInterval(_notifyTimer);
   _notifyTimer=setInterval(checkPendingCount,600000); // 每 10 分鐘檢查一次
 }
-function openNotifyPanel(){
-  var n=_notifyCount.bk+_notifyCount.intake;
-  if(!n){modal('<div class="modal-head" style="background:var(--navy)">線上送出通知<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="empty" style="padding:24px">目前沒有待處理的線上送出 ✓</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn ghost" onclick="reloadNotify(this)">重新整理</button></div>');return;}
-  var parts=[];
-  if(_notifyCount.bk)parts.push('<div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)"><div class="row" style="gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:var(--mint-l,#edfaf6);display:flex;align-items:center;justify-content:center">📅</span><div><div style="font-weight:700;font-size:14px">線上預約</div><div class="t-sub">'+_notifyCount.bk+' 筆待匯入</div></div></div></div>');
-  if(_notifyCount.intake)parts.push('<div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)"><div class="row" style="gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center">📋</span><div><div style="font-weight:700;font-size:14px">初診表單</div><div class="t-sub">'+_notifyCount.intake+' 份待匯入</div></div></div></div>');
-  modal('<div class="modal-head" style="background:var(--navy)">線上送出通知<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+parts.join('')+'<div class="banner info" style="margin-top:14px"><span>i</span><div>點下方「匯入全部」自動拉進後台；初診表單會更新病患資料、預約會排入行事曆（衝突時段除外）。</div></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn ghost" onclick="reloadNotify(this)">重新整理</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">稍後</button><button class="btn" onclick="closeModal();pullSubmissions(false);setTimeout(checkPendingCount,1200)">匯入全部</button></div></div>');
+function notifyTimeAgo(iso){
+  var diff=Date.now()-new Date(iso).getTime();
+  var m=Math.floor(diff/60000);
+  if(m<1)return '剛剛';
+  if(m<60)return m+' 分鐘前';
+  var h=Math.floor(m/60);
+  if(h<24)return h+' 小時前';
+  return Math.floor(h/24)+' 天前';
 }
-// 手動重新載入通知，並更新面板
+function markNotifyRead(id){
+  var n=NOTIFY_LOG.find(function(x){return x.id===id;});
+  if(n)n.read=true;
+  refreshNotifyBell();
+  rebuildNotifyPanel();
+  if(typeof saveAll==='function')saveAll();
+}
+function markAllNotifyRead(){
+  NOTIFY_LOG.forEach(function(n){n.read=true;});
+  refreshNotifyBell();
+  rebuildNotifyPanel();
+  if(typeof saveAll==='function')saveAll();
+}
+function clearNotifyLog(){
+  NOTIFY_LOG=[];
+  refreshNotifyBell();
+  rebuildNotifyPanel();
+  if(typeof saveAll==='function')saveAll();
+}
+function notifyRowHTML(n){
+  var info=n.kind==='bk'
+    ? {icon:'📅',bg:'var(--mint-l,#edfaf6)',title:'線上預約',desc:n.count+' 筆待匯入'}
+    : {icon:'📋',bg:'var(--navy-l)',title:'初診表單',desc:n.count+' 份待匯入'};
+  var dot=n.read?'':'<span style="width:8px;height:8px;border-radius:50%;background:var(--danger,#e05c5c);flex-shrink:0"></span>';
+  var op=n.read?'opacity:.55':'';
+  return '<div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);'+op+'" data-nid="'+n.id+'">'
+    +'<div class="row" style="gap:10px;align-items:center;min-width:0"><span style="width:36px;height:36px;border-radius:50%;background:'+info.bg+';display:flex;align-items:center;justify-content:center;flex-shrink:0">'+info.icon+'</span>'
+    +'<div style="min-width:0"><div style="font-weight:700;font-size:14px">'+info.title+'</div><div class="t-sub">'+info.desc+' · '+notifyTimeAgo(n.at)+'</div></div></div>'
+    +'<div class="row" style="gap:6px;align-items:center;flex-shrink:0">'+dot
+    +(n.read?'':'<button class="btn sm ghost" onclick="markNotifyRead(\''+n.id+'\')">已讀</button>')+'</div></div>';
+}
+function notifyPanelBodyHTML(){
+  if(!NOTIFY_LOG.length){
+    return '<div class="empty" style="padding:24px">目前沒有通知</div>';
+  }
+  return NOTIFY_LOG.map(notifyRowHTML).join('')
+    +'<div class="banner info" style="margin-top:14px"><span>i</span><div>通知最多保留最近 5 筆。點「匯入全部」可把待處理的線上送出拉進後台；初診更新病患資料、預約排入行事曆（衝突時段除外）。</div></div>';
+}
+function rebuildNotifyPanel(){
+  var body=document.getElementById('notifyBody');
+  if(body)body.innerHTML=notifyPanelBodyHTML();
+}
+function openNotifyPanel(){
+  var hasPending=(_notifyCount.bk+_notifyCount.intake)>0;
+  var unread=notifyUnreadCount();
+  modal('<div class="modal-head" style="background:var(--navy)">通知'
+    +(unread?' <span class="tag" style="background:rgba(255,255,255,.25);color:#fff;margin-left:6px">'+unread+' 則未讀</span>':'')
+    +'<button class="x" onclick="closeModal()">&times;</button></div>'
+    +'<div class="modal-body" id="notifyBody">'+notifyPanelBodyHTML()+'</div>'
+    +'<div class="modal-foot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
+    +'<div class="row" style="gap:6px"><button class="btn ghost sm" onclick="reloadNotify(this)">重新整理</button>'
+    +(NOTIFY_LOG.length?'<button class="btn ghost sm" onclick="markAllNotifyRead()">全部已讀</button><button class="btn ghost sm" onclick="clearNotifyLog()">清空</button>':'')
+    +'</div>'
+    +'<div class="row" style="gap:6px"><button class="btn gray sm" onclick="closeModal()">關閉</button>'
+    +(hasPending?'<button class="btn sm" onclick="pullSubmissions(false);markAllNotifyRead();setTimeout(function(){checkPendingCount();reloadNotify();},1200)">匯入全部</button>':'')
+    +'</div></div>');
+}
+// 手動重新載入通知，並更新面板（點擊面板不關閉）
 function reloadNotify(btn){
-  if(btn){btn.disabled=true;btn.textContent='載入中…';}
-  if(!RENDER_URL||!currentUser){if(btn){btn.disabled=false;btn.textContent='重新整理';}return;}
+  if(btn&&btn.tagName){btn.disabled=true;btn.textContent='載入中…';}
+  if(!RENDER_URL||!currentUser){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}return;}
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
-    _notifyCount.bk=((data&&data.bookings)||[]).length;
-    _notifyCount.intake=((data&&data.intakes)||[]).length;
+    var bk=((data&&data.bookings)||[]).length;
+    var intake=((data&&data.intakes)||[]).length;
+    if(bk>_lastSeen.bk)addNotify('bk',bk);
+    if(intake>_lastSeen.intake)addNotify('intake',intake);
+    _lastSeen.bk=bk;_lastSeen.intake=intake;
+    _notifyCount.bk=bk;_notifyCount.intake=intake;
     refreshNotifyBell();
-    closeModal();
-    openNotifyPanel();
-    showToast('通知已更新');
-  }).catch(function(){if(btn){btn.disabled=false;btn.textContent='重新整理';}showToast('讀取失敗，請稍後再試');});
+    rebuildNotifyPanel();
+    if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}
+  }).catch(function(){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}showToast('讀取失敗，請稍後再試');});
 }
 var views={};
 
@@ -573,7 +645,7 @@ function calcRetention(){
 }
 /* ============ 手動備份 / 還原 ============ */
 function buildSnapshot(){
-  return {SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,_backupAt:new Date().toISOString(),_version:1};
+  return {SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,NOTIFY_LOG:NOTIFY_LOG,_backupAt:new Date().toISOString(),_version:1};
 }
 function doBackup(){
   try{
@@ -705,7 +777,7 @@ var _saveExpiredNotified=false;
 function saveAll(){
   if(!RENDER_URL||!currentUser)return Promise.resolve();
   if(_resetDone)return Promise.resolve();
-  var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS};
+  var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,NOTIFY_LOG:NOTIFY_LOG};
   return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).then(function(r){
     if(r.status===401||r.status===403){
       if(!_saveExpiredNotified){_saveExpiredNotified=true;showSaveExpiredModal();}
@@ -740,6 +812,7 @@ function loadFromServer(cb){
     if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
     if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;if(s.LOGIN_LOGO)LOGIN_LOGO=s.LOGIN_LOGO;if(s.REMINDER_TEMPLATE!=null)REMINDER_TEMPLATE=s.REMINDER_TEMPLATE;
     if(s.PUBLISHED_SVC_IDS!==undefined)PUBLISHED_SVC_IDS=s.PUBLISHED_SVC_IDS;if(s.PUBLISHED_PKG_IDS!==undefined)PUBLISHED_PKG_IDS=s.PUBLISHED_PKG_IDS;
+    if(Array.isArray(s.NOTIFY_LOG))NOTIFY_LOG=s.NOTIFY_LOG.slice(0,5);
     if(typeof setFavicon==='function')setFavicon();
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
