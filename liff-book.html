@@ -2,335 +2,276 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>線上預約 · 領航物理治療所</title>
-<script src="https://static.line-scdn.net/liff/edge/2/sdk.js" onerror="window._liffErr=true"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>線上預約</title>
+<script src="https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js"></script>
 <style>
 :root{
-  --navy:#1a4d68;--navy-d:#123b52;
-  --sky:#4a9ebe;--sky-l:#eef7fb;
+  --sky:#1a4d68;--sky-mid:#4a9ebe;--sky-l:#eef7fb;
   --mint:#2DC8A0;--mint-d:#1f9e7e;--mint-l:#edfaf6;
-  --line-green:#06C755;
-  --mist:#dce6ec;--bg:#f4f8fb;--ink:#1f3a47;--slate:#6b8a9c;
-  --warn:#e05c5c;
-  --r:14px;--r-sm:10px;
+  --mist:#dce6ec;--line-c:#eef3f6;--bg:#f4f8fb;
+  --ink:#1f3a47;--slate:#6b8a9c;--danger:#e05c5c;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{min-height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',-apple-system,sans-serif;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
-button,input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
-::placeholder{color:#a8bcc8}
+body{font-family:'Noto Sans TC','PingFang TC',-apple-system,sans-serif;
+  background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6;min-height:100vh}
+button,input,select{font-family:inherit;font-size:14px;color:var(--ink)}
+::placeholder{color:#b0c4cc}
 
-/* ── Layout ── */
-.page{max-width:480px;margin:0 auto;padding:0 0 40px}
-
-/* ── Header ── */
-.header{background:linear-gradient(145deg,var(--navy) 0%,var(--sky) 100%);color:#fff;padding:28px 24px 24px;position:relative;overflow:hidden}
-.header::after{content:'';position:absolute;right:-30px;bottom:-30px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.06)}
-.header-top{display:flex;align-items:center;gap:12px;margin-bottom:4px}
-.header-icon{width:40px;height:40px;background:var(--line-green);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.clinic-name{font-size:18px;font-weight:700;letter-spacing:.3px}
-.clinic-sub{font-size:12px;opacity:.8;margin-top:2px}
-
-/* ── LINE profile banner ── */
-.profile-banner{display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid var(--mist);padding:14px 20px}
-.profile-avatar{width:46px;height:46px;border-radius:50%;object-fit:cover;border:2.5px solid var(--mint);flex-shrink:0}
-.profile-avatar-fb{width:46px;height:46px;border-radius:50%;background:var(--sky-l);color:var(--navy);font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2.5px solid var(--mint)}
-.profile-name{font-weight:700;font-size:14px}
-.profile-sub{font-size:11px;color:var(--mint-d);margin-top:1px}
-
-/* ── Form ── */
-.form-wrap{padding:20px 20px 0}
-.field{margin-bottom:16px}
-.field label{display:block;font-size:12px;font-weight:700;color:var(--slate);margin-bottom:7px;letter-spacing:.3px;text-transform:uppercase}
-.field input,.field select,.field textarea{
-  width:100%;padding:13px 14px;border:1.5px solid var(--mist);border-radius:var(--r-sm);
-  outline:none;background:#fff;font-size:14px;transition:.15s;
-  -webkit-appearance:none;appearance:none
-}
-.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sky)}
-.field input[readonly]{background:#f8f9fa;color:var(--slate);cursor:default}
-.field select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b8a9c' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:38px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.warn-box{background:#fef2f2;border:1px solid #fbb;border-radius:8px;padding:10px 13px;font-size:12px;color:var(--warn);margin-bottom:12px;display:none}
-
-/* ── Submit btn ── */
-.submit-btn{
-  width:100%;padding:16px;border:none;border-radius:var(--r);
-  background:linear-gradient(135deg,var(--navy),var(--sky));
-  color:#fff;font-size:16px;font-weight:700;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:8px;
-  transition:.15s;margin-top:6px;letter-spacing:.3px
-}
-.submit-btn:active{opacity:.88}
-.submit-btn:disabled{opacity:.5;cursor:not-allowed}
-.submit-btn svg{width:20px;height:20px;flex-shrink:0}
-.submit-note{text-align:center;font-size:11px;color:var(--slate);margin-top:10px;line-height:1.7}
-
-/* ── LINE login btn ── */
-.line-login-btn{
-  width:100%;padding:14px;border:none;border-radius:var(--r-sm);
-  background:var(--line-green);color:#fff;font-size:15px;font-weight:700;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;
-  margin-bottom:16px
-}
-.line-login-btn svg{width:22px;height:22px}
-
-/* ── Loading ── */
-.loading{min-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--slate)}
-.spinner{width:36px;height:36px;border:3px solid var(--mist);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite}
+/* loading */
+.loading{min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;color:var(--slate)}
+.spinner{width:36px;height:36px;border:3px solid var(--mist);
+  border-top-color:var(--sky-mid);border-radius:50%;animation:spin .75s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ── Success ── */
-.success{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center}
-.success-icon{width:72px;height:72px;border-radius:50%;background:var(--mint-l);display:flex;align-items:center;justify-content:center;margin-bottom:20px;font-size:36px}
-.success h2{font-size:22px;font-weight:800;color:var(--navy);margin-bottom:8px}
-.success-detail{background:#fff;border:1px solid var(--mist);border-radius:var(--r);padding:16px 18px;text-align:left;width:100%;margin:16px 0 24px;font-size:14px;line-height:2}
-.success-detail .row{display:flex;gap:8px}
-.success-detail .k{color:var(--slate);min-width:64px;flex-shrink:0;font-size:12px}
-.success-detail .v{font-weight:600}
-.line-msg-note{font-size:12px;color:var(--mint-d);font-weight:600;margin-bottom:20px}
-.rebtn{padding:13px 28px;border:1.5px solid var(--navy);border-radius:var(--r-sm);background:#fff;color:var(--navy);font-weight:700;font-size:14px;cursor:pointer}
+/* profile strip */
+.profile-strip{display:flex;align-items:center;gap:12px;
+  padding:18px 20px;background:#fff;border-bottom:1px solid var(--line-c)}
+.p-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;
+  border:2px solid var(--mint);flex-shrink:0}
+.p-avatar-fb{width:48px;height:48px;border-radius:50%;background:var(--sky-l);
+  color:var(--sky);font-size:20px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  border:2px solid var(--mint);flex-shrink:0}
+.p-name{font-weight:700;font-size:15px}
+.p-sub{font-size:11px;color:var(--mint-d);margin-top:2px}
 
-/* ── Toast ── */
-#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--navy);color:#fff;padding:11px 22px;border-radius:999px;font-size:13px;font-weight:600;z-index:999;opacity:0;pointer-events:none;transition:.25s;white-space:nowrap;box-shadow:0 4px 16px rgba(26,77,104,.18)}
+/* form */
+.form-body{padding:20px 16px 40px}
+.section{background:#fff;border-radius:12px;padding:18px;margin-bottom:14px;
+  box-shadow:0 1px 6px rgba(26,77,104,.06)}
+.sec-title{font-size:11px;font-weight:700;color:var(--slate);
+  letter-spacing:.8px;text-transform:uppercase;margin-bottom:14px}
+.field{margin-bottom:13px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:12px;font-weight:600;
+  color:var(--slate);margin-bottom:6px}
+.field input,.field select{
+  width:100%;padding:12px 14px;border:1.5px solid var(--mist);
+  border-radius:9px;outline:none;background:#fff;transition:.15s;
+  -webkit-appearance:none;appearance:none}
+.field input:focus,.field select:focus{border-color:var(--sky-mid)}
+.field input[readonly]{background:#f8fafc;color:var(--slate)}
+.field select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%236b8a9c' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 13px center;padding-right:36px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.warn{background:#fef2f2;border:1px solid #fcc;border-radius:8px;
+  padding:10px 13px;font-size:12px;color:var(--danger);
+  margin-bottom:12px;display:none}
+
+/* submit */
+.submit-wrap{padding:0 16px 32px}
+.submit-btn{width:100%;padding:15px;border:none;border-radius:12px;
+  background:var(--sky);color:#fff;font-size:16px;font-weight:700;
+  cursor:pointer;transition:.15s;letter-spacing:.3px}
+.submit-btn:active{background:#123b52}
+.submit-btn:disabled{opacity:.5;cursor:not-allowed}
+.submit-note{text-align:center;font-size:11px;color:var(--slate);margin-top:9px}
+
+/* done */
+.done-wrap{min-height:100vh;display:flex;align-items:center;
+  justify-content:center;padding:28px 20px}
+.done-card{background:#fff;border-radius:16px;padding:36px 24px;
+  text-align:center;width:100%;max-width:360px;
+  box-shadow:0 4px 24px rgba(26,77,104,.1)}
+.done-icon{width:64px;height:64px;border-radius:50%;background:var(--mint-l);
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;margin:0 auto 18px}
+.done-card h2{font-size:20px;font-weight:800;color:var(--sky);margin-bottom:6px}
+.done-rows{text-align:left;margin:16px 0;font-size:13px;
+  background:var(--bg);border-radius:10px;padding:14px 16px;line-height:2.1}
+.done-rows .r{display:flex;gap:8px}
+.done-rows .k{color:var(--slate);min-width:58px;flex-shrink:0;font-size:12px}
+.done-rows .v{font-weight:600}
+.line-sent{font-size:12px;color:var(--mint-d);font-weight:600;margin-bottom:18px}
+.rebtn{padding:12px 28px;border:1.5px solid var(--sky);border-radius:9px;
+  background:#fff;color:var(--sky);font-weight:700;font-size:14px;cursor:pointer}
+
+/* toast */
+#toast{position:fixed;bottom:24px;left:50%;
+  transform:translateX(-50%) translateY(16px);
+  background:var(--sky);color:#fff;padding:11px 22px;
+  border-radius:999px;font-size:13px;font-weight:600;
+  z-index:999;opacity:0;pointer-events:none;transition:.25s;
+  box-shadow:0 4px 16px rgba(26,77,104,.2)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-
-/* ── Divider ── */
-.divider{height:1px;background:var(--mist);margin:4px 0 18px}
-.section-label{font-size:11px;font-weight:700;color:var(--slate);letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px}
 </style>
 </head>
 <body>
 
-<div class="page" id="app">
-  <div class="loading" id="loadingView">
-    <div class="spinner"></div>
-    <div>載入中…</div>
-  </div>
+<div id="loading" class="loading">
+  <div class="spinner"></div>
+  <div style="font-size:13px">驗證中…</div>
 </div>
 
+<div id="app" style="display:none"></div>
 <div id="toast"></div>
 
 <script>
-/* ════════════════════════════════
-   設定區
-   ════════════════════════════════ */
-var LIFF_ID = '2010433876-ySl8EsUh';
-var RENDER_URL = 'https://line-webhook-x1ux.onrender.com';
+var LIFF_ID    = '2010433876-ySl8EsUh';
+var RENDER_URL = 'https://navicare-5swm.onrender.com';
 
-/* ════════════════════════════════
-   資料
-   ════════════════════════════════ */
+/* 攔截所有未捕捉錯誤，避免白畫面 */
+window.onerror = function(msg, src, line, col, err){
+  console.warn('Global error:', msg, src, line);
+  /* 若畫面還在 loading，直接跳過 LIFF 顯示表單 */
+  var ld = document.getElementById('loading');
+  if(ld && ld.style.display !== 'none'){
+    loadCatalog(showApp);
+  }
+  return true; /* 阻止預設錯誤拋出 */
+};
+
 var SERVICES = [
-  {id:'s1', name:'整合物理治療', dur:50, price:2200},
-  {id:'s2', name:'院長｜整合物理治療', dur:50, price:2700},
-  {id:'s3', name:'資深治療師｜整合物理治療', dur:50, price:2500},
-  {id:'s4', name:'整合物理治療（初診／多項問題）', dur:80, price:3700},
-  {id:'s5', name:'院長｜整合物理治療（初診／多項問題）', dur:80, price:4200},
-  {id:'s6', name:'資深治療師｜整合物理治療（初診／多項問題）', dur:80, price:4000},
-  {id:'s7', name:'整合物理＆震波治療', dur:50, price:3500},
-  {id:'s8', name:'院長｜整合物理＆震波治療', dur:50, price:4000},
-  {id:'s9', name:'資深治療師｜整合物理＆震波治療', dur:50, price:3800},
-  {id:'s10', name:'初步身體評估', dur:15, price:1500},
-  {id:'s13', name:'嬋柔團課', dur:50, price:900},
-  {id:'s14', name:'紅繩運動課程（Redcord®）', dur:50, price:2500},
-  {id:'s15', name:'墊上嬋柔課程', dur:50, price:2500},
-  {id:'s16', name:'墊上皮拉提斯課程', dur:50, price:2500},
-  {id:'s17', name:'器械嬋柔課程', dur:50, price:2800},
-  {id:'s18', name:'器械皮拉提斯課程', dur:50, price:2800}
+  {id:'s1',  name:'整合物理治療',                              dur:50, price:2200},
+  {id:'s2',  name:'院長｜整合物理治療',                        dur:50, price:2700},
+  {id:'s3',  name:'資深治療師｜整合物理治療',                  dur:50, price:2500},
+  {id:'s4',  name:'整合物理治療（初診／多項問題）',            dur:80, price:3700},
+  {id:'s5',  name:'院長｜整合物理治療（初診／多項問題）',      dur:80, price:4200},
+  {id:'s6',  name:'資深治療師｜整合物理治療（初診／多項問題）',dur:80, price:4000},
+  {id:'s7',  name:'整合物理＆震波治療',                        dur:50, price:3500},
+  {id:'s8',  name:'院長｜整合物理＆震波治療',                  dur:50, price:4000},
+  {id:'s9',  name:'資深治療師｜整合物理＆震波治療',            dur:50, price:3800},
+  {id:'s10', name:'初步身體評估',                              dur:15, price:1500},
+  {id:'s13', name:'嬋柔團課',                                  dur:50, price:900},
+  {id:'s14', name:'紅繩運動課程（Redcord®）',                  dur:50, price:2500},
+  {id:'s15', name:'墊上嬋柔課程',                              dur:50, price:2500},
+  {id:'s16', name:'墊上皮拉提斯課程',                          dur:50, price:2500},
+  {id:'s17', name:'器械嬋柔課程',                              dur:50, price:2800},
+  {id:'s18', name:'器械皮拉提斯課程',                          dur:50, price:2800}
 ];
 var THERAPISTS = [
-  {id:'Sky', name:'張博源', title:'行銷總監 CMO'},
+  {id:'Sky',  name:'張博源', title:'行銷總監 CMO'},
   {id:'wujs', name:'巫俊杉', title:'院長'}
 ];
+var lineProfile = null;
 
-/* ════════════════════════════════
-   狀態
-   ════════════════════════════════ */
-var liffProfile = null;   /* {userId, displayName, pictureUrl} */
-var liffReady = false;
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtNT(n){return 'NT$'+(Number(n)||0).toLocaleString();}
+function p2(n){return String(n).padStart(2,'0');}
+function today(){var d=new Date();return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());}
+function svcOf(id){return SERVICES.find(function(s){return s.id===id;})||{name:'-',dur:0,price:0};}
+function tNameOf(id){return (THERAPISTS.find(function(t){return t.id===id;})||{name:id}).name;}
+function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2200);}
 
-/* ════════════════════════════════
-   工具
-   ════════════════════════════════ */
-function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function fmtNT(n){ return 'NT$'+(Number(n)||0).toLocaleString(); }
-function today(){
-  var d=new Date();
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-}
-function toast(msg){
-  var el=document.getElementById('toast');
-  el.textContent=msg; el.classList.add('show');
-  setTimeout(function(){el.classList.remove('show');},2200);
-}
-function svcOf(id){ return SERVICES.find(function(s){return s.id===id;})||{name:'-',dur:0,price:0}; }
-
-/* ════════════════════════════════
-   從後端拉 catalog（若有）
-   ════════════════════════════════ */
 function loadCatalog(cb){
-  if(!RENDER_URL){cb();return;}
   fetch(RENDER_URL+'/catalog')
     .then(function(r){return r.json();})
     .then(function(cat){
-      if(Array.isArray(cat.services)&&cat.services.length) SERVICES=cat.services;
-      if(Array.isArray(cat.therapists)&&cat.therapists.length) THERAPISTS=cat.therapists;
+      if(Array.isArray(cat.services)&&cat.services.length){
+        SERVICES=cat.services.map(function(s){
+          return {id:s.id,name:s.name,dur:Number(s.dur)||50,price:Number(s.price)||0};
+        });
+      }
+      if(Array.isArray(cat.therapists)&&cat.therapists.length)THERAPISTS=cat.therapists;
       cb();
-    })
-    .catch(function(){cb();});
+    }).catch(function(){cb();});
 }
 
-/* ════════════════════════════════
-   LIFF 初始化
-   ════════════════════════════════ */
-function initLiff(cb){
-  if(window._liffErr||typeof liff==='undefined'){ cb(); return; }
+try{
   liff.init({liffId:LIFF_ID})
     .then(function(){
-      liffReady=true;
-      if(liff.isLoggedIn()){
-        return liff.getProfile();
-      } else {
-        if(liff.isInClient()) liff.login();
-        return null;
-      }
+      if(!liff.isLoggedIn()){liff.login({redirectUri:window.location.href});return;}
+      return liff.getProfile();
     })
     .then(function(p){
-      if(p) liffProfile={userId:p.userId,displayName:p.displayName,pictureUrl:p.pictureUrl||''};
-      cb();
+      if(p) lineProfile=p;
+      loadCatalog(showApp);
     })
     .catch(function(e){
-      console.warn('LIFF init error:',e);
-      cb();
+      console.error('LIFF error:',e);
+      loadCatalog(showApp);
     });
+}catch(e){
+  console.error('LIFF init failed:',e);
+  loadCatalog(showApp);
 }
 
-/* ════════════════════════════════
-   送預約到後端
-   ════════════════════════════════ */
-function submitBooking(data){
-  if(!RENDER_URL) return Promise.resolve(false);
-  return fetch(RENDER_URL+'/submit-booking',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(data)
-  }).then(function(r){return r.ok;}).catch(function(){return false;});
+function showApp(){
+  document.getElementById('loading').style.display='none';
+  document.getElementById('app').style.display='block';
+  renderForm();
 }
 
-/* LIFF 傳送確認訊息 */
-function sendLiffMsg(data){
-  try{
-    if(!liffReady||typeof liff==='undefined'||!liff.isInClient()) return;
-    var end=''; 
-    try{
-      var parts=data.time.split(':');
-      var em=Number(parts[0])*60+Number(parts[1])+svcOf(data.svc).dur;
-      end=' – '+String(Math.floor(em/60)).padStart(2,'0')+':'+String(em%60).padStart(2,'0');
-    }catch(e){}
-    liff.sendMessages([{type:'text',text:
-      '【領航物理治療所】預約確認 ✅\n'
-      +'姓名：'+data.name+'\n'
-      +'服務：'+svcOf(data.svc).name+'\n'
-      +'治療師：'+data.tName+'\n'
-      +'日期：'+data.date+'\n'
-      +'時間：'+data.time+end+'\n'
-      +'如需更改，請於前一工作日 18:00 前來電 (02)2826-1698 🙏'
-    }]).catch(function(){});
-  }catch(e){}
-}
-
-/* ════════════════════════════════
-   渲染
-   ════════════════════════════════ */
 function renderForm(){
   var app=document.getElementById('app');
+  var avatarHtml='';
+  if(lineProfile){
+    avatarHtml=lineProfile.pictureUrl
+      ?'<img class="p-avatar" src="'+esc(lineProfile.pictureUrl)+'" alt="">'
+      :'<div class="p-avatar-fb">'+esc((lineProfile.displayName||'?')[0])+'</div>';
+  }
+  var profileStrip=lineProfile
+    ?'<div class="profile-strip">'+avatarHtml
+      +'<div><div class="p-name">'+esc(lineProfile.displayName)+'</div>'
+      +'<div class="p-sub">已透過 LINE 驗證身分</div></div></div>'
+    :'';
+
   var sOpts=SERVICES.map(function(s){
-    return '<option value="'+s.id+'">'+esc(s.name)+' · '+fmtNT(s.price)+'</option>';
+    return '<option value="'+s.id+'">'+esc(s.name)+'</option>';
   }).join('');
   var tOpts=THERAPISTS.map(function(t){
     return '<option value="'+t.id+'">'+esc(t.name)+(t.title?' · '+esc(t.title):'')+'</option>';
   }).join('');
-  var prefilledName=liffProfile?liffProfile.displayName:'';
-
-  /* 頭像區 */
-  var profileHtml='';
-  if(liffProfile){
-    var avatarHtml=liffProfile.pictureUrl
-      ?'<img class="profile-avatar" src="'+esc(liffProfile.pictureUrl)+'" onerror="this.outerHTML=\'<div class=profile-avatar-fb>'+esc((liffProfile.displayName||'?')[0])+'</div>\'">'
-      :'<div class="profile-avatar-fb">'+esc((liffProfile.displayName||'?')[0])+'</div>';
-    profileHtml='<div class="profile-banner">'
-      +avatarHtml
-      +'<div><div class="profile-name">'+esc(liffProfile.displayName)+'</div>'
-      +'<div class="profile-sub">✔ 已透過 LINE 登入</div></div>'
-      +'</div>';
-  }
-
-  /* LINE 登入按鈕（未登入時） */
-  var loginBtnHtml='';
-  if(liffReady&&typeof liff!=='undefined'&&!liff.isLoggedIn()&&!liffProfile){
-    loginBtnHtml='<button class="line-login-btn" onclick="liff.login()">'
-      +'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.067 2 11.111c0 4.525 3.2 8.307 7.544 9.445l.456.444V23l3.333-2.333C14.08 20.888 15.022 21 16 21c5.523 0 9-3.478 9-9.889C25 6.067 17.523 2 12 2z"/></svg>'
-      +'以 LINE 帳號登入</button>';
-  }
+  var pre=lineProfile?lineProfile.displayName:'';
 
   app.innerHTML=
-    '<div class="header">'
-    +'<div class="header-top">'
-    +'<div class="header-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M12 2C6.477 2 2 6.067 2 11.111c0 4.525 3.2 8.307 7.544 9.445l.456.444V23l3.333-2.333C14.08 20.888 15.022 21 16 21c5.523 0 9-3.478 9-9.889C25 6.067 17.523 2 12 2z"/></svg></div>'
-    +'<div><div class="clinic-name">領航物理治療所</div><div class="clinic-sub">LINE 線上預約</div></div>'
-    +'</div>'
-    +'</div>'
-    +profileHtml
-    +'<div class="form-wrap">'
-    +'<div style="height:20px"></div>'
-    +loginBtnHtml
-    +'<div class="section-label">個人資訊</div>'
-    +'<div class="field"><label>姓名</label><input id="f-name" value="'+esc(prefilledName)+'" '+(prefilledName?'readonly':'')+' placeholder="請輸入姓名"></div>'
-    +'<div class="field"><label>電話</label><input id="f-phone" type="tel" placeholder="09xx-xxx-xxx"></div>'
-    +'<div class="divider"></div>'
-    +'<div class="section-label">預約資訊</div>'
-    +'<div class="field"><label>服務項目</label><select id="f-svc">'+sOpts+'</select></div>'
-    +'<div class="field"><label>指定治療師</label><select id="f-t">'+tOpts+'</select></div>'
-    +'<div class="grid2">'
-    +'<div class="field"><label>日期</label><input id="f-date" type="date" min="'+today()+'" value="'+today()+'"></div>'
-    +'<div class="field"><label>時間</label><input id="f-time" type="time" value="09:00" min="08:00" max="21:00" step="900"></div>'
-    +'</div>'
-    +'<div class="field"><label>備註（選填）</label><input id="f-note" placeholder="例：初次就診、有停車需求…"></div>'
-    +'<div class="warn-box" id="warnBox"></div>'
-    +'<button class="submit-btn" id="submitBtn" onclick="doSubmit()">'
-    +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
-    +'確認送出預約'
-    +'</button>'
-    +'<div class="submit-note">'
-    +(liffProfile?'✉ 送出後將自動傳送 LINE 確認訊息':'送出後將同步至後台，診所將與您確認')
-    +'</div>'
-    +'</div>';
+    profileStrip+
+    '<div class="form-body">'+
+    '<div class="section">'+
+    '<div class="sec-title">聯絡資訊</div>'+
+    '<div class="field"><label>姓名</label>'+
+      '<input id="f-name" value="'+esc(pre)+'" '+(pre?'readonly':'')+' placeholder="請輸入姓名"></div>'+
+    '<div class="field"><label>電話</label>'+
+      '<input id="f-phone" type="tel" placeholder="09xx-xxx-xxx"></div>'+
+    '</div>'+
+    '<div class="section">'+
+    '<div class="sec-title">預約內容</div>'+
+    '<div class="field"><label>服務項目</label><select id="f-svc" onchange="updateSvcInfo()">'+sOpts+'</select></div>'+
+    '<div class="grid2">'+
+      '<div class="field"><label>時長</label><input id="f-dur" readonly value="'+svcOf(SERVICES[0]?SERVICES[0].id:'').dur+' 分鐘"></div>'+
+      '<div class="field"><label>費用</label><input id="f-price" readonly value="'+fmtNT(SERVICES[0]?SERVICES[0].price:0)+'"></div>'+
+    '</div>'+
+    '<div class="field"><label>指定治療師</label><select id="f-t">'+tOpts+'</select></div>'+
+    '<div class="field"><label>日期</label><input id="f-date" type="date" min="'+today()+'" value="'+today()+'"></div>'+
+    '<div class="grid2">'+
+      '<div class="field"><label>開始時間</label><input id="f-time" type="time" value="09:00" min="08:00" max="21:00" step="900" onchange="updateEndTime()"></div>'+
+      '<div class="field"><label>結束時間</label><input id="f-end" readonly value="09:50"></div>'+
+    '</div>'+
+    '<div class="field"><label>備註（選填）</label>'+
+      '<input id="f-note" placeholder="初次就診、停車需求…"></div>'+
+    '</div>'+
+    '<div class="warn" id="warnBox"></div>'+
+    '</div>'+
+    '<div class="submit-wrap">'+
+    '<button class="submit-btn" id="submitBtn" onclick="doSubmit()">送出預約</button>'+
+    '<div class="submit-note">'+(lineProfile?'送出後將自動傳送 LINE 確認訊息':'送出後診所將與您確認')+'</div>'+
+    '</div>';
 }
 
-function renderSuccess(data){
-  var app=document.getElementById('app');
-  var lineNote=liffProfile?'<div class="line-msg-note">✉ LINE 確認訊息已傳送至您的聊天室</div>':'';
-  app.innerHTML=
-    '<div class="success">'
-    +'<div class="success-icon">✅</div>'
-    +'<h2>預約已送出！</h2>'
-    +'<p style="color:#6b8a9c;font-size:14px">我們會在就診前與您確認</p>'
-    +'<div class="success-detail">'
-    +'<div class="row"><span class="k">姓名</span><span class="v">'+esc(data.name)+'</span></div>'
-    +'<div class="row"><span class="k">服務</span><span class="v">'+esc(svcOf(data.svc).name)+'</span></div>'
-    +'<div class="row"><span class="k">治療師</span><span class="v">'+esc(data.tName)+'</span></div>'
-    +'<div class="row"><span class="k">日期</span><span class="v">'+esc(data.date)+'</span></div>'
-    +'<div class="row"><span class="k">時間</span><span class="v">'+esc(data.time)+'</span></div>'
-    +'</div>'
-    +lineNote
-    +'<button class="rebtn" onclick="renderForm()">再次預約</button>'
-    +'</div>';
+function updateEndTime(){
+  var time=document.getElementById('f-time').value;
+  var svcId=document.getElementById('f-svc').value;
+  var endEl=document.getElementById('f-end');
+  if(!time||!endEl) return;
+  var dur=svcOf(svcId).dur||0;
+  var hm=time.split(':');
+  var em=Number(hm[0])*60+Number(hm[1])+dur;
+  endEl.value=p2(Math.floor(em/60))+':'+p2(em%60);
+}
+function updateSvcInfo(){
+  var svcId=document.getElementById('f-svc').value;
+  var s=svcOf(svcId);
+  var dur=document.getElementById('f-dur');
+  var price=document.getElementById('f-price');
+  if(dur) dur.value=s.dur+' 分鐘';
+  if(price) price.value=fmtNT(s.price);
+  updateEndTime();
 }
 
-/* ════════════════════════════════
-   送出邏輯
-   ════════════════════════════════ */
 function doSubmit(){
   var name=(document.getElementById('f-name').value||'').trim();
   var phone=(document.getElementById('f-phone').value||'').trim();
@@ -339,54 +280,74 @@ function doSubmit(){
   var date=document.getElementById('f-date').value;
   var time=document.getElementById('f-time').value;
   var note=(document.getElementById('f-note').value||'').trim();
-  var warnBox=document.getElementById('warnBox');
-
+  var wb=document.getElementById('warnBox');
   if(!name||!phone||!date||!time){
-    warnBox.textContent='⚠ 請填寫完整的姓名、電話、日期與時間';
-    warnBox.style.display='block';return;
+    wb.textContent='請填寫姓名、電話、日期與時間';wb.style.display='block';return;
   }
   var hm=time.split(':');
-  var startMin=Number(hm[0])*60+Number(hm[1]);
-  var endMin=startMin+svcOf(svcId).dur;
-  if(startMin<480||endMin>1320){
-    warnBox.textContent='⚠ 預約時間需在 08:00–22:00 之間';
-    warnBox.style.display='block';return;
+  var sm=Number(hm[0])*60+Number(hm[1]);
+  if(sm<480||(sm+svcOf(svcId).dur)>1320){
+    wb.textContent='預約時間需在 08:00–22:00 之間';wb.style.display='block';return;
   }
-  warnBox.style.display='none';
-
-  var tName=(THERAPISTS.find(function(t){return t.id===tId;})||{name:tId}).name;
+  wb.style.display='none';
   var btn=document.getElementById('submitBtn');
   if(btn){btn.disabled=true;btn.textContent='送出中…';}
-
   var payload={
-    name:name, phone:phone,
-    svc:svcId, svcName:svcOf(svcId).name,
-    t:tId, tName:tName,
-    date:date, time:time,
-    note:'LINE LIFF 預約'+(note?'・'+note:''),
-    lineUserId:liffProfile?liffProfile.userId:''
+    name:name,phone:phone,
+    svc:svcId,svcName:svcOf(svcId).name,
+    t:tId,tName:tNameOf(tId),
+    date:date,time:time,
+    note:'LIFF 預約'+(note?'・'+note:''),
+    lineUserId:lineProfile?lineProfile.userId:'',
+    lineDisplayName:lineProfile?lineProfile.displayName:'',
+    submittedAt:new Date().toISOString()
   };
-
-  submitBooking(payload).then(function(){
-    sendLiffMsg(payload);
-    renderSuccess(payload);
-    toast('預約已送出 ✓');
-  }).catch(function(){
-    if(btn){btn.disabled=false;btn.textContent='確認送出預約';}
-    toast('送出失敗，請稍後再試');
+  fetch(RENDER_URL+'/submit-booking',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+  })
+  .then(function(r){return{ok:r.ok,status:r.status};})
+  .then(function(res){
+    if(res.ok){sendLiffMsg(payload);renderDone(payload);}
+    else{toast('送出失敗（'+res.status+'），請再試');if(btn){btn.disabled=false;btn.textContent='送出預約';}}
+  })
+  .catch(function(){
+    toast('網路錯誤，請再試');if(btn){btn.disabled=false;btn.textContent='送出預約';}
   });
 }
 
-/* ════════════════════════════════
-   啟動
-   ════════════════════════════════ */
-(function boot(){
-  initLiff(function(){
-    loadCatalog(function(){
-      renderForm();
-    });
-  });
-})();
+function sendLiffMsg(d){
+  try{
+    if(!liff.isInClient())return;
+    var hm=d.time.split(':'),em=Number(hm[0])*60+Number(hm[1])+svcOf(d.svc).dur;
+    var end=' – '+p2(Math.floor(em/60))+':'+p2(em%60);
+    liff.sendMessages([{type:'text',text:
+      '【領航物理治療所】預約確認 ✅\n'
+      +'姓名：'+d.name+'\n服務：'+d.svcName+'\n治療師：'+d.tName
+      +'\n日期：'+d.date+'\n時間：'+d.time+end
+      +'\n如需更改請於前一工作日 18:00 前來電 (02)2826-1698 🙏'
+    }]).catch(function(){});
+  }catch(e){}
+}
+
+function renderDone(d){
+  var app=document.getElementById('app');
+  app.innerHTML=
+    '<div class="done-wrap"><div class="done-card">'+
+    '<div class="done-icon">✅</div>'+
+    '<h2>預約已送出</h2>'+
+    '<p style="color:var(--slate);font-size:13px">我們會在就診前與您確認</p>'+
+    '<div class="done-rows">'+
+      '<div class="r"><span class="k">姓名</span><span class="v">'+esc(d.name)+'</span></div>'+
+      '<div class="r"><span class="k">服務</span><span class="v">'+esc(d.svcName)+'</span></div>'+
+      '<div class="r"><span class="k">治療師</span><span class="v">'+esc(d.tName)+'</span></div>'+
+      '<div class="r"><span class="k">日期</span><span class="v">'+esc(d.date)+'</span></div>'+
+      '<div class="r"><span class="k">時間</span><span class="v">'+esc(d.time)+'</span></div>'+
+    '</div>'+
+    (lineProfile?'<p class="line-sent">✉ LINE 確認訊息已傳送</p>':'')+
+    '<button class="rebtn" onclick="renderForm()">再次預約</button>'+
+    '</div></div>';
+  toast('預約已送出 ✓');
+}
 </script>
 </body>
 </html>
