@@ -481,15 +481,28 @@ var _notifyTimer=null;
 function startNotifyPolling(){
   checkPendingCount();
   if(_notifyTimer)clearInterval(_notifyTimer);
-  _notifyTimer=setInterval(checkPendingCount,60000); // 每分鐘檢查一次
+  _notifyTimer=setInterval(checkPendingCount,600000); // 每 10 分鐘檢查一次
 }
 function openNotifyPanel(){
   var n=_notifyCount.bk+_notifyCount.intake;
-  if(!n){modal('<div class="modal-head" style="background:var(--navy)">線上送出通知<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="empty" style="padding:24px">目前沒有待處理的線上送出 ✓</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button></div>');return;}
+  if(!n){modal('<div class="modal-head" style="background:var(--navy)">線上送出通知<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="empty" style="padding:24px">目前沒有待處理的線上送出 ✓</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn ghost" onclick="reloadNotify(this)">重新整理</button></div>');return;}
   var parts=[];
   if(_notifyCount.bk)parts.push('<div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)"><div class="row" style="gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:var(--mint-l,#edfaf6);display:flex;align-items:center;justify-content:center">📅</span><div><div style="font-weight:700;font-size:14px">線上預約</div><div class="t-sub">'+_notifyCount.bk+' 筆待匯入</div></div></div></div>');
   if(_notifyCount.intake)parts.push('<div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)"><div class="row" style="gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:var(--navy-l);display:flex;align-items:center;justify-content:center">📋</span><div><div style="font-weight:700;font-size:14px">初診表單</div><div class="t-sub">'+_notifyCount.intake+' 份待匯入</div></div></div></div>');
-  modal('<div class="modal-head" style="background:var(--navy)">線上送出通知<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+parts.join('')+'<div class="banner info" style="margin-top:14px"><span>i</span><div>點下方「匯入全部」自動拉進後台；初診表單會更新病患資料、預約會排入行事曆（衝突時段除外）。</div></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">稍後</button><button class="btn" onclick="closeModal();pullSubmissions(false);setTimeout(checkPendingCount,1200)">匯入全部</button></div>');
+  modal('<div class="modal-head" style="background:var(--navy)">線上送出通知<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+parts.join('')+'<div class="banner info" style="margin-top:14px"><span>i</span><div>點下方「匯入全部」自動拉進後台；初診表單會更新病患資料、預約會排入行事曆（衝突時段除外）。</div></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn ghost" onclick="reloadNotify(this)">重新整理</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">稍後</button><button class="btn" onclick="closeModal();pullSubmissions(false);setTimeout(checkPendingCount,1200)">匯入全部</button></div></div>');
+}
+// 手動重新載入通知，並更新面板
+function reloadNotify(btn){
+  if(btn){btn.disabled=true;btn.textContent='載入中…';}
+  if(!RENDER_URL||!currentUser){if(btn){btn.disabled=false;btn.textContent='重新整理';}return;}
+  fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
+    _notifyCount.bk=((data&&data.bookings)||[]).length;
+    _notifyCount.intake=((data&&data.intakes)||[]).length;
+    refreshNotifyBell();
+    closeModal();
+    openNotifyPanel();
+    showToast('通知已更新');
+  }).catch(function(){if(btn){btn.disabled=false;btn.textContent='重新整理';}showToast('讀取失敗，請稍後再試');});
 }
 var views={};
 
@@ -1591,7 +1604,7 @@ function renderClinicQRs(){
 function clinicLinksCard(){
   var L=clinicLinks();
   function block(title,desc,url,qrId,copyExpr,color){
-    return '<div style="flex:1;min-width:250px;border:1px solid var(--line);border-radius:12px;padding:16px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span style="width:8px;height:8px;border-radius:50%;background:'+color+';flex-shrink:0"></span><b style="font-size:14px">'+title+'</b></div><div style="font-size:11px;color:var(--slate);margin-bottom:12px">'+desc+'</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div id="'+qrId+'" style="width:120px;height:120px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:8px"></div><div style="flex:1;min-width:160px"><div style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg);border-radius:8px;padding:9px 11px;margin-bottom:8px;line-height:1.6">'+esc(url)+'</div><button class="btn sm" onclick="'+copyExpr+'">複製連結</button></div></div></div>';
+    return '<div style="flex:1;min-width:250px;border:1px solid var(--line);border-radius:12px;padding:18px"><div style="display:flex;align-items:center;gap:9px;margin-bottom:5px"><span style="width:10px;height:10px;border-radius:50%;background:'+color+';flex-shrink:0"></span><b style="font-size:17px">'+title+'</b></div><div style="font-size:13px;color:var(--slate);margin-bottom:14px">'+desc+'</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div id="'+qrId+'" style="width:120px;height:120px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:8px"></div><div style="flex:1;min-width:180px"><div style="font-family:monospace;font-size:14px;word-break:break-all;background:var(--bg);border-radius:8px;padding:11px 13px;margin-bottom:10px;line-height:1.7">'+esc(url)+'</div><button class="btn sm" onclick="'+copyExpr+'">複製連結</button></div></div></div>';
   }
   return '<div class="card"><div class="card-head"><h3>線上預約與初診表單連結</h3><span class="tag mint">分享給個案</span></div><div class="card-body"><div class="banner info"><span>i</span><div>把連結或 QR code 分享給個案：貼到 LINE 官方帳號、IG 簡介，或印出 QR 貼在櫃台。個案線上送出的預約，記得回「預約管理」按「匯入預約」拉進後台。</div></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+block('線上預約','客戶自助選服務、治療師、時段',L.book,'qr-book','copyText(clinicLinks().book)','var(--mint)')+block('初診表單','首次就診前填寫基本資料與同意書',L.intake,'qr-intake','copyText(clinicLinks().intake)','var(--navy)')+'</div></div></div>';
 }
