@@ -1768,19 +1768,21 @@ function saveTCalendar(tid){var t=THERAPISTS.find(function(x){return x.id===tid;
 function pickTCalendar(tid){listGCalendars(function(items){if(!items.length){showToast('讀取行事曆清單失敗，請確認已授權');return;}var opts=items.map(function(c){return '<button class="btn ghost sm" style="display:block;width:100%;text-align:left;margin-bottom:6px" onclick="document.getElementById(\'tcal-id\').value=\''+esc(c.id)+'\';closeModal();tEditModal(\''+tid+'\',\'calendar\');setTimeout(function(){document.getElementById(\'tcal-id\').value=\''+esc(c.id)+'\';},50);">'+esc(c.summary)+(c.primary?' <span class=tag>主行事曆</span>':'')+'<div style=\'font-family:monospace;font-size:10px;color:var(--slate);margin-top:2px\'>'+esc(c.id)+'</div></button>';}).join('');modal('<div class="modal-head" style="background:var(--navy)">選擇行事曆<button class="x" onclick="tEditModal(\''+tid+'\',\'calendar\')">&times;</button></div><div class="modal-body">'+opts+'</div><div class="modal-foot"><button class="btn gray" onclick="tEditModal(\''+tid+'\',\'calendar\')">返回</button></div>');});}
 function testTCalendar(tid){
   var cid=(document.getElementById('tcal-id').value||'').trim()||CLINIC_INFO.calendarId||'primary';
-  ensureGCal(function(){
+  var retried=false;
+  function doTest(){
     fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cid),{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){return res.json().then(function(d){return {ok:res.ok,status:res.status,d:d};}).catch(function(){return {ok:res.ok,status:res.status,d:{}};});}).then(function(r){
       if(r.ok){showToast('連線成功 ✓ 行事曆：'+(r.d.summary||cid));return;}
       var msg=(r.d.error&&r.d.error.message)||'';
-      if(r.status===403&&/scope|permission|insufficient/i.test(msg)){showToast('⚠ 行事曆範圍未授權：請至 Google Cloud Console → OAuth 同意畫面 → 新增 calendar.events 範圍，並把 Gmail 加入測試使用者，再按「連接行事曆」');return;}
-      if(r.status===404){showToast('找不到此行事曆，或登入帳號無存取權，請確認行事曆 ID 與共用設定');return;}
-      showToast('連線失敗：'+(msg||'請確認行事曆 ID 與共用權限'));
-    }).catch(function(){showToast('連線失敗，請確認網路與授權');});
-  });
+      if(!retried&&r.status===403){retried=true;reauthCalendar(doTest);return;}
+      if(r.status===404){showToast('找不到此行事曆，請確認 ID 與共用設定');return;}
+      showToast('連線失敗：'+(msg||'請確認行事曆 ID'));
+    }).catch(function(){showToast('連線失敗，請確認網路連線');});
+  }
+  ensureGCal(doTest);
 }
 function reauthCalendar(cb){
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  gcalToken=null;gcalTokenExp=0;gcalConsented=false;
+  gcalToken=null;gcalTokenExp=0;gcalConsented=false;gcalClient=null; // 強制重建 client
   loadGsi(function(){
     gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'https://www.googleapis.com/auth/calendar.events',callback:function(r){if(r.error){showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;if(cb)cb();}});
     gcalClient.requestAccessToken({prompt:'consent'});
