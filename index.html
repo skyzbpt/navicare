@@ -1772,7 +1772,7 @@ function testTCalendar(tid){
     fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cid),{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){return res.json().then(function(d){return {ok:res.ok,status:res.status,d:d};}).catch(function(){return {ok:res.ok,status:res.status,d:{}};});}).then(function(r){
       if(r.ok){showToast('連線成功 ✓ 行事曆：'+(r.d.summary||cid));return;}
       var msg=(r.d.error&&r.d.error.message)||'';
-      if(r.status===403&&/scope|permission|insufficient/i.test(msg)){showToast('權限不足，請按「連接行事曆」並在彈出視窗允許行事曆存取');return;}
+      if(r.status===403&&/scope|permission|insufficient/i.test(msg)){showToast('⚠ 行事曆範圍未授權：請至 Google Cloud Console → OAuth 同意畫面 → 新增 calendar.events 範圍，並把 Gmail 加入測試使用者，再按「連接行事曆」');return;}
       if(r.status===404){showToast('找不到此行事曆，或登入帳號無存取權，請確認行事曆 ID 與共用設定');return;}
       showToast('連線失敗：'+(msg||'請確認行事曆 ID 與共用權限'));
     }).catch(function(){showToast('連線失敗，請確認網路與授權');});
