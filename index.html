@@ -638,14 +638,13 @@ function triggerGoogleLogin(){
     fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}}).then(function(res){return res.json();}).then(function(info){
       var email=(info.email||'');var cfg=EMAIL_WHITELIST[email]||EMAIL_WHITELIST[email.toLowerCase()];
       if(!cfg){setLoading(false);try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}showUnauthorizedModal(email);return;}
-      gcalToken=token;gmailToken=token;gcalTokenExp=Date.now()+(Number(expIn||3600)-60)*1000;gcalConsented=true;
       currentUser={email:email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
       loadFromServer(function(){setLoading(false);go((currentUser.pages.indexOf('dashboard')>-1)?'dashboard':(currentUser.pages[0]||'login'));startNotifyPolling();});
     }).catch(function(){setLoading(false);showLoginError('無法取得帳號資訊，請再試一次');});
   }
   function initAndLogin(){
     try{
-      if(!loginClient){loginClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',callback:function(r){if(r.error){if(!loginConsented){loginConsented=true;loginClient.requestAccessToken({prompt:'consent'});return;}setLoading(false);showLoginError('登入失敗：'+r.error);return;}loginConsented=true;finishLogin(r.access_token,r.expires_in);}});}
+      if(!loginClient){loginClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile',callback:function(r){if(r.error){if(!loginConsented){loginConsented=true;loginClient.requestAccessToken({prompt:'consent'});return;}setLoading(false);showLoginError('登入失敗：'+r.error);return;}loginConsented=true;finishLogin(r.access_token,r.expires_in);}});}
       loginClient.requestAccessToken({prompt:''});
     }catch(e){setLoading(false);showLoginError('登入初始化失敗：'+e.message);}
   }
@@ -914,7 +913,7 @@ function loadGsi(cb){if(typeof google!=='undefined'&&google.accounts&&google.acc
 function ensureGCal(cb){
   if(gcalToken&&Date.now()<gcalTokenExp){cb();return;}
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  loadGsi(function(){if(!gcalClient){gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',callback:function(r){if(r.error){if(!gcalConsented){gcalConsented=true;gcalClient.requestAccessToken({prompt:'consent'});return;}showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gmailToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;cb();}});}gcalClient.requestAccessToken({prompt:gcalConsented?'':'consent'});});
+  loadGsi(function(){if(!gcalClient){gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'https://www.googleapis.com/auth/calendar.events',callback:function(r){if(r.error){if(!gcalConsented){gcalConsented=true;gcalClient.requestAccessToken({prompt:'consent'});return;}showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;cb();}});}gcalClient.requestAccessToken({prompt:gcalConsented?'':'consent'});});
 }
 function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.calendarId||'primary');}
@@ -931,8 +930,8 @@ function gcalUpsert(b){
   var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(b.gcalEventId){url+='/'+b.gcalEventId;method='PATCH';}
   return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}if(r.status===404&&b.gcalEventId){b.gcalEventId=null;return gcalUpsert(b);}throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));});
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;var retried=false;function trySync(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){var m=(e&&e.message)||'';if(!retried&&/scope|insufficient|credential|401|invalid/i.test(m)){retried=true;showToast('行事曆權限不足，請在彈出視窗重新授權…');reauthCalendar(trySync);return;}showToast('同步失敗：'+m);});}ensureGCal(trySync);}
-function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
+function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;if(!gcalToken||Date.now()>=gcalTokenExp)return;gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(){});}
+function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}if(!gcalToken||Date.now()>=gcalTokenExp){if(cb)cb();return;}fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(){if(cb)cb();});}
 function listGCalendars(cb){ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList',{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(r){return r.json();}).then(function(data){cb(data.items||[]);}).catch(function(){cb([]);});});}
 function testGCalConnection(){ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(),{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){return res.json().then(function(d){return {ok:res.ok,d:d};});}).then(function(r){if(r.ok)showToast('連線成功 ✓ 行事曆：'+(r.d.summary||CLINIC_INFO.calendarId));else showToast('連線失敗：'+((r.d.error&&r.d.error.message)||'請確認行事曆 ID'));}).catch(function(){showToast('連線失敗，請確認網路與授權');});});}
 function pullSubmissions(silent){
@@ -1762,29 +1761,28 @@ function tEditModal(tid,tab){
   modal('<div class="modal-head" style="background:'+c+'">'+esc(t.name)+' - 編輯<button class="x" onclick="closeModal()">&times;</button></div><div class="edit-tabs"><button class="edit-tab'+(tab==='profile'?' active':'')+'" onclick="tEditTab(this,\'profile\')">基本資料</button><button class="edit-tab'+(tab==='account'?' active':'')+'" onclick="tEditTab(this,\'account\')">帳號權限</button><button class="edit-tab'+(tab==='calendar'?' active':'')+'" onclick="tEditTab(this,\'calendar\')">行事曆</button></div>'+
     '<div class="edit-panel'+(tab==='profile'?' active':'')+'" id="ted-profile"><div class="grid2"><div class="field"><label>姓名</label><input id="tp-name" value="'+esc(t.name)+'"></div><div class="field"><label>職稱</label><input id="tp-title" value="'+esc(t.title)+'"></div></div><div class="field"><label>代表色</label><input id="tp-color" type="color" value="'+c+'" style="width:60px;height:36px"></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTProfileEdit(\''+tid+'\')">儲存資料</button></div></div>'+
     '<div class="edit-panel'+(tab==='account'?' active':'')+'" id="ted-account"><div class="sec-label">已連結帳號</div><div id="tedAccList">'+accRows+'</div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">新增 / 連結 Gmail 帳號</div><div class="field"><label>顯示名稱</label><input id="ta-name" value="'+esc(t.name)+'"></div><div class="field"><label>Gmail 帳號</label><input id="ta-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div><div class="field"><label>權限角色</label><select id="ta-role">'+staffRoleOptions('therapist')+'</select></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="addTAccountEdit(\''+tid+'\')">新增帳號</button></div></div>'+
-    '<div class="edit-panel'+(tab==='calendar'?' active':'')+'" id="ted-calendar"><div class="banner info"><span>i</span><div>設定此治療師專屬的 Google 行事曆後，該治療師的預約（新增／修改／取消）會同步到這個行事曆，而非診所共用行事曆。留空＝使用診所預設行事曆。</div></div><div class="field"><label>Google 行事曆 ID</label><input id="tcal-id" value="'+esc(t.calendarId||'')+'" placeholder="留空＝診所預設" style="font-family:monospace"></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" onclick="saveTCalendar(\''+tid+'\')">儲存</button><button class="btn ghost" onclick="pickTCalendar(\''+tid+'\')">從清單選擇</button><button class="btn gray" onclick="testTCalendar(\''+tid+'\')">測試連線</button></div>'+(t.calendarId?'<div style="margin-top:12px;font-size:12px;color:var(--mint-d)">✔ 目前綁定：<span style="font-family:monospace">'+esc(t.calendarId)+'</span></div>':'<div style="margin-top:12px;font-size:12px;color:var(--slate)">目前使用診所預設行事曆</div>')+'</div>'+
+    '<div class="edit-panel'+(tab==='calendar'?' active':'')+'" id="ted-calendar"><div class="banner info"><span>i</span><div>登入只需基本帳號權限，<b>不會</b>每次跳行事曆授權。要用同步時按一次「連接行事曆」授權即可（當次登入有效）。設定專屬行事曆 ID 後，此治療師的預約會同步到該行事曆；留空＝診所預設。<br>請先在 Google 日曆把該行事曆「共用」給登入的 Gmail 帳號並給「變更活動」權限，否則會連線失敗。</div></div><div class="field"><label>Google 行事曆 ID</label><input id="tcal-id" value="'+esc(t.calendarId||'')+'" placeholder="留空＝診所預設" style="font-family:monospace"></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" onclick="saveTCalendar(\''+tid+'\')">儲存</button><button class="btn" style="background:#4285F4" onclick="reauthCalendar(function(){showToast(\'已連接行事曆 ✓，可按測試連線確認\');})">連接行事曆</button><button class="btn ghost" onclick="pickTCalendar(\''+tid+'\')">從清單選擇</button><button class="btn gray" onclick="testTCalendar(\''+tid+'\')">測試連線</button></div>'+(t.calendarId?'<div style="margin-top:12px;font-size:12px;color:var(--mint-d)">✔ 目前綁定：<span style="font-family:monospace">'+esc(t.calendarId)+'</span></div>':'<div style="margin-top:12px;font-size:12px;color:var(--slate)">目前使用診所預設行事曆</div>')+'</div>'+
     '<div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">關閉</button></div>');
 }
 function saveTCalendar(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;t.calendarId=(document.getElementById('tcal-id').value||'').trim();saveAll();tEditModal(tid,'calendar');showToast(t.calendarId?'已綁定行事曆 ✓':'已改用診所預設行事曆');}
 function pickTCalendar(tid){listGCalendars(function(items){if(!items.length){showToast('讀取行事曆清單失敗，請確認已授權');return;}var opts=items.map(function(c){return '<button class="btn ghost sm" style="display:block;width:100%;text-align:left;margin-bottom:6px" onclick="document.getElementById(\'tcal-id\').value=\''+esc(c.id)+'\';closeModal();tEditModal(\''+tid+'\',\'calendar\');setTimeout(function(){document.getElementById(\'tcal-id\').value=\''+esc(c.id)+'\';},50);">'+esc(c.summary)+(c.primary?' <span class=tag>主行事曆</span>':'')+'<div style=\'font-family:monospace;font-size:10px;color:var(--slate);margin-top:2px\'>'+esc(c.id)+'</div></button>';}).join('');modal('<div class="modal-head" style="background:var(--navy)">選擇行事曆<button class="x" onclick="tEditModal(\''+tid+'\',\'calendar\')">&times;</button></div><div class="modal-body">'+opts+'</div><div class="modal-foot"><button class="btn gray" onclick="tEditModal(\''+tid+'\',\'calendar\')">返回</button></div>');});}
 function testTCalendar(tid){
   var cid=(document.getElementById('tcal-id').value||'').trim()||CLINIC_INFO.calendarId||'primary';
-  var retried=false;
-  function doTest(){
+  ensureGCal(function(){
     fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cid),{headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){return res.json().then(function(d){return {ok:res.ok,status:res.status,d:d};}).catch(function(){return {ok:res.ok,status:res.status,d:{}};});}).then(function(r){
       if(r.ok){showToast('連線成功 ✓ 行事曆：'+(r.d.summary||cid));return;}
       var msg=(r.d.error&&r.d.error.message)||'';
-      if(!retried&&(r.status===403||r.status===401)){retried=true;showToast('行事曆權限不足，請在彈出視窗重新授權…');reauthCalendar(doTest);return;}
+      if(r.status===403&&/scope|permission|insufficient/i.test(msg)){showToast('權限不足，請按「連接行事曆」並在彈出視窗允許行事曆存取');return;}
+      if(r.status===404){showToast('找不到此行事曆，或登入帳號無存取權，請確認行事曆 ID 與共用設定');return;}
       showToast('連線失敗：'+(msg||'請確認行事曆 ID 與共用權限'));
     }).catch(function(){showToast('連線失敗，請確認網路與授權');});
-  }
-  ensureGCal(doTest);
+  });
 }
 function reauthCalendar(cb){
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  gcalToken=null;gcalTokenExp=0;
+  gcalToken=null;gcalTokenExp=0;gcalConsented=false;
   loadGsi(function(){
-    gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',callback:function(r){if(r.error){showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gmailToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;if(cb)cb();}});
+    gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'https://www.googleapis.com/auth/calendar.events',callback:function(r){if(r.error){showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;if(cb)cb();}});
     gcalClient.requestAccessToken({prompt:'consent'});
   });
 }
