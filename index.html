@@ -476,10 +476,10 @@ function notifyBellHTML(){
   var n=notifyUnreadCount();
   var badge=n>0?'<span class="notify-badge">'+(n>99?'99+':n)+'</span>':'';
   var pulse=n>0?' has-new':'';
-  return '<button class="notify-bell'+pulse+'" onclick="openNotifyPanel()" title="通知"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'+badge+'</button>';
+  return '<button id="notifyBell" class="notify-bell'+pulse+'" onclick="openNotifyPanel()" title="通知"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'+badge+'</button>';
 }
 function refreshNotifyBell(){
-  var bell=document.querySelector('.notify-bell');
+  var bell=document.getElementById('notifyBell');
   if(bell)bell.outerHTML=notifyBellHTML();
 }
 // 通知提示音（Web Audio 合成，無需外部檔案）
@@ -1686,6 +1686,8 @@ function setCareThreshold(d){_careThreshold=d;go('retention');}
 function sendCareMsg(ph){var p=getPatient(ph);if(!p){showToast('查無病患');return;}if(!p.lineId){showToast('此病患尚未綁定 LINE，請改用電話聯絡');return;}var msg='【領航物理治療所】\n親愛的'+(p.name||'')+'您好 😊\n距離您上次回診已有一段時間，我們很關心您的近況與身體狀況。\n如有任何不適，或想安排回診調整，都歡迎直接回覆訊息，或來電 (02)2826-1698，我們很樂意為您服務 🙏';sendLineMsg(p.lineId,msg);}
 views.retention=function(){
   var ret=calcRetention();var days=_careThreshold;var list=careList(days);
+  var _seen={};BOOKINGS.filter(function(b){return b.status==='completed';}).forEach(function(b){_seen[b.phone]=1;});
+  var allVisited=Object.keys(_seen).length;var needCare=list.length;var active=Math.max(0,allVisited-needCare);
   var pill=function(d){return '<button class="cal-pill'+(_careThreshold===d?' active':'')+'" onclick="setCareThreshold('+d+')">'+d+' 天以上</button>';};
   var rows=list.map(function(r){
     var urg=r.days>=90?'<span class="tag" style="background:#fdecec;color:#e05c5c">'+r.days+' 天</span>':(r.days>=60?'<span class="tag amber">'+r.days+' 天</span>':'<span class="tag gray">'+r.days+' 天</span>');
@@ -1694,7 +1696,7 @@ views.retention=function(){
   }).join('');
   var table=list.length?('<table><thead><tr><th>姓名</th><th>上次回診</th><th>距今</th><th>累計</th><th>聯絡關心</th></tr></thead><tbody>'+rows+'</tbody></table>'):'<div class="empty" style="padding:30px">目前沒有超過 '+days+' 天未回診的個案 🎉</div>';
   return shell('retention','客戶回流',
-    '<div class="stat-grid"><div class="stat-card"><div class="sc-n">'+ret.rate+'%</div><div class="sc-l">90天回流率</div></div><div class="stat-card"><div class="sc-n mint">'+ret.lapsed+'</div><div class="sc-l">未回診（超過60天）</div></div><div class="stat-card"><div class="sc-n" style="color:#e05c5c">'+list.length+'</div><div class="sc-l">需關心名單（'+days+' 天+）</div></div></div>'+
+    '<div class="stat-grid"><div class="stat-card"><div class="sc-n">'+ret.rate+'%</div><div class="sc-l">回流率（回診≥2次）</div></div><div class="stat-card"><div class="sc-n mint">'+active+'</div><div class="sc-l">近 '+days+' 天有回診</div></div><div class="stat-card"><div class="sc-n" style="color:#e05c5c">'+needCare+'</div><div class="sc-l">超過 '+days+' 天未回診</div></div></div>'+
     '<div class="card"><div class="card-head"><h3>需要關心的名單</h3><span class="t-sub">距上次回診越久排越前面</span></div><div class="card-body"><div class="row" style="gap:6px;margin-bottom:14px;flex-wrap:wrap">'+pill(30)+pill(60)+pill(90)+'</div>'+table+'</div></div>');
 };
 
