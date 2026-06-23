@@ -968,7 +968,7 @@ function gcalUpsert(b){
     return true;
   });
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){saveAll();showToast('\u5df2\u540c\u6b65\u81f3 Google \u884c\u4e8b\u66c6 \u2713');}).catch(function(e){saveAll();showToast('\u90e8\u5206\u540c\u6b65\u5931\u6557\uFF1A'+(e.message||''));});});}
+function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){saveAll();showToast('\u5df2\u540c\u6b65\u81f3 Google \u884c\u4e8b\u66c6 \u2713');}).catch(function(e){saveAll();var m=String(e.message||'');if(/not found|forbidden|insufficient|403|404/i.test(m)){showToast('\u540c\u6b65\u5931\u6557\uFF1A\u76ee\u524d\u767b\u5165\u5e33\u865f\u7121\u6b0a\u5beb\u5165\u8a72\u884c\u4e8b\u66c6\uFF0C\u8acb\u5c07\u5b83\u4ee5\u300c\u8b8a\u66f4\u6d3b\u52d5\u300d\u6b0a\u9650\u5206\u4eab\u7d66\u6b64\u5e33\u865f\uFF08'+m+'\uFF09');}else{showToast('\u540c\u6b65\u5931\u6557\uFF1A'+m);}});});}
 function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
 // 刪除一筆預約在「所有」已同步行事曆上的事件（含舊資料相容）
 function gcalDeleteBooking(b,cb){
