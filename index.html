@@ -312,13 +312,13 @@ ALL_PT_TAGS.forEach(function(t){PT_TAG_MAP[t.id]=t;});
 var PT_TAG_DATA={};
 var T_SVC_RATES={};
 var CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY01160081號',owner:'巫俊杉',address:'台北市北投區西安街二段167號3樓',tel:'（02）2826-1698',calendarId:'primary'};
-/* 行事曆同步規則：
-   預設所有預約都進 SYNC_CALENDAR_ID（nycuptc）。
-   THERAPIST_CALENDAR 為例外表（key = 治療師 id）：列在這裡的治療師，預約改寫進指定行事曆。
-   目前：張博源（id 'Sky'）的預約 → skyzbpt；其餘所有治療師（含「不指定」）→ nycuptc。
-   寫死，不受伺服器資料影響。操作帳號需對目標行事曆有「變更活動」權限。 */
-var SYNC_CALENDAR_ID='nycuptc@gmail.com';
-var THERAPIST_CALENDAR={ 'Sky':'skyzbpt@gmail.com' };
+/* 行事曆同步規則（單一帳號、免分享）：
+   所有預約一律同步到「目前登入帳號自己的行事曆」（'primary'）。
+   只要固定用同一個帳號登入操作，所有預約就都集中在那一本，完全不需要把行事曆分享給別人。
+   若日後想讓某位治療師的預約「額外」也寫進指定行事曆，再於 THERAPIST_CALENDAR 加一行
+   （key = 治療師 id、值 = 該行事曆 email），但那會需要操作帳號對該行事曆有「變更活動」權限。 */
+var SYNC_CALENDAR_ID='primary';
+var THERAPIST_CALENDAR={};
 var PAYMENTS=[];
 var PAYMENT_ID=1000;
 var STAMPS={clinic:'',owner:''};
@@ -969,7 +969,6 @@ function gcalUpsert(b){
   });
 }
 function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){saveAll();showToast('\u5df2\u540c\u6b65\u81f3 Google \u884c\u4e8b\u66c6 \u2713');}).catch(function(e){saveAll();var m=String(e.message||'');if(/not found|forbidden|insufficient|403|404/i.test(m)){showToast('\u540c\u6b65\u5931\u6557\uFF1A\u76ee\u524d\u767b\u5165\u5e33\u865f\u7121\u6b0a\u5beb\u5165\u8a72\u884c\u4e8b\u66c6\uFF0C\u8acb\u5c07\u5b83\u4ee5\u300c\u8b8a\u66f4\u6d3b\u52d5\u300d\u6b0a\u9650\u5206\u4eab\u7d66\u6b64\u5e33\u865f\uFF08'+m+'\uFF09');}else{showToast('\u540c\u6b65\u5931\u6557\uFF1A'+m);}});});}
-function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
 // 刪除一筆預約在「所有」已同步行事曆上的事件（含舊資料相容）
 function gcalDeleteBooking(b,cb){
   if(!b){if(cb)cb();return;}
@@ -1856,12 +1855,6 @@ function __safeErrorToast(msg){
     var t=document.getElementById('sToast');
     if(t){t.textContent='操作發生問題，請重試或重新整理';t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2600);}
   }catch(e){}
-}
-function __wrapHandler(fn){
-  return function(){
-    try{return fn.apply(this,arguments);}
-    catch(err){console.error('事件處理錯誤:',err);__safeErrorToast(err&&err.message);}
-  };
 }
 /* 攔截全域未捕捉錯誤（含 onclick 內同步錯誤） */
 window.addEventListener('error',function(ev){
