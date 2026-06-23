@@ -467,9 +467,7 @@ function syncToolBtnHTML(){
 }
 function manualSync(){
   var b=document.getElementById('syncBtn');if(b)b.classList.add('spinning');
-  var stop=function(){var bb=document.getElementById('syncBtn');if(bb)bb.classList.remove('spinning');try{checkPendingCount();}catch(e){}};
-  var pr=pullSubmissions(false);
-  if(pr&&pr.then){pr.then(stop,stop);}else{setTimeout(stop,800);}
+  reloadNotify(); // 與通知面板的「重新整理」完全相同的同步流程
 }
 var _notifyCount={bk:0,intake:0};
 /* 通知歷史：最多 5 筆，每筆 {id, kind, count, at, read} */
@@ -633,8 +631,9 @@ function openNotifyPanel(){
 }
 // 手動同步：匯入 LIFF 線上預約／初診表的填寫，並更新通知面板（點擊面板不關閉）
 function reloadNotify(btn){
+  var _fin=function(){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}var sb=document.getElementById('syncBtn');if(sb)sb.classList.remove('spinning');};
   if(btn&&btn.tagName){btn.disabled=true;btn.textContent='同步中…';}
-  if(!RENDER_URL||!currentUser){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}return;}
+  if(!RENDER_URL||!currentUser){_fin();return;}
   pullSubmissions(true); // 匯入 LIFF 線上預約與初診表的填寫
   // 同步 LINE 好友（更新頭貼／待綁定狀態，不跳頁）
   fetch(RENDER_URL+'/line-users').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
@@ -651,8 +650,8 @@ function reloadNotify(btn){
       _notifyCount.bk=bk;_notifyCount.intake=intake;
       refreshNotifyBell();
       rebuildNotifyPanel();
-      if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}
-    }).catch(function(){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}showToast('讀取失敗，請稍後再試');});
+      _fin();
+    }).catch(function(){_fin();showToast('讀取失敗，請稍後再試');});
   },1500);
 }
 var views={};
@@ -1488,10 +1487,10 @@ function viewIntake(ph){
 function tagModal(ph){var p=getPatient(ph);if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">'+esc(p.name)+' - 標籤<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div id="tagList"></div><div style="height:1px;background:var(--line);margin:14px 0"></div><div class="sec-label">新增標籤</div><div class="row" style="gap:8px"><input id="ntName" placeholder="標籤名稱" style="flex:1;padding:9px;border:1.5px solid var(--mist);border-radius:8px;outline:none"><input id="ntColor" type="color" value="#3b82f6" style="width:40px;height:36px;border:1.5px solid var(--mist);border-radius:8px"><button class="btn sm" onclick="addTag(\''+ph+'\')">新增</button></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="clearAllTags(\''+ph+'\')">清除全部標籤</button><button class="btn" onclick="closeModal();go(\'patients\')">完成</button></div>');renderTagList(ph);}
 function renderTagList(ph){var tags=getTags(ph);var el=document.getElementById('tagList');if(!el)return;if(!ALL_PT_TAGS.length){el.innerHTML='<div class="empty" style="padding:14px">\u5c1a\u7121\u6a19\u7c64\uff0c\u65bc\u4e0b\u65b9\u65b0\u589e\u3002</div>';return;}el.innerHTML=ALL_PT_TAGS.map(function(t,ti){var on=tags.indexOf(t.id)>-1;var up=ti>0?'<button class="btn sm ghost" style="padding:0 6px" onclick="moveTag('+ti+',-1,\''+ph+'\')" title="\u4e0a\u79fb">\u2191</button>':'<button class="btn sm ghost" style="padding:0 6px;opacity:.25" disabled>\u2191</button>';var dn=ti<ALL_PT_TAGS.length-1?'<button class="btn sm ghost" style="padding:0 6px" onclick="moveTag('+ti+',1,\''+ph+'\')" title="\u4e0b\u79fb">\u2193</button>':'<button class="btn sm ghost" style="padding:0 6px;opacity:.25" disabled>\u2193</button>';return '<div class="row" style="gap:6px;padding:6px 0;border-bottom:1px solid var(--line)"><div style="display:flex;flex-direction:column">'+up+dn+'</div><button onclick="toggleTag(\''+ph+'\',\''+t.id+'\')" style="width:24px;height:24px;border:1.5px solid '+t.color+';border-radius:6px;background:'+(on?t.color:'#fff')+';color:#fff;cursor:pointer;flex-shrink:0">'+(on?'&check;':'')+'</button><input type="color" value="'+t.color+'" onchange="editTagColor(\''+t.id+'\',this.value,\''+ph+'\')" style="width:30px;height:30px;border:1.5px solid var(--mist);border-radius:6px;padding:0;flex-shrink:0;cursor:pointer"><input value="'+esc(t.name)+'" oninput="editTagName(\''+t.id+'\',this.value)" style="flex:1;font-weight:600;border:1.5px solid var(--mist);border-radius:7px;padding:7px 9px;outline:none"><button class="shift-del" onclick="delTag(\''+t.id+'\',\''+ph+'\')" style="flex-shrink:0">&times;</button></div>';}).join('');}
 function editTagName(id,val){var t=PT_TAG_MAP[id];if(t)t.name=val;var a=ALL_PT_TAGS.find(function(x){return x.id===id;});if(a)a.name=val;}
-function editTagColor(id,val,ph){var t=PT_TAG_MAP[id];if(t)t.color=val;var a=ALL_PT_TAGS.find(function(x){return x.id===id;});if(a)a.color=val;renderTagList(ph);}
-function toggleTag(ph,tid){var tags=getTags(ph);var i=tags.indexOf(tid);if(i>-1)tags.splice(i,1);else tags.push(tid);renderTagList(ph);}
-function addTag(ph){var n=document.getElementById('ntName').value.trim();if(!n)return;var c=document.getElementById('ntColor').value;var id='c'+Date.now();ALL_PT_TAGS.push({id:id,name:n,color:c});PT_TAG_MAP[id]={id:id,name:n,color:c};getTags(ph).push(id);document.getElementById('ntName').value='';renderTagList(ph);}
-function delTag(tid,ph){var i=ALL_PT_TAGS.findIndex(function(t){return t.id===tid;});if(i>-1)ALL_PT_TAGS.splice(i,1);delete PT_TAG_MAP[tid];Object.keys(PT_TAG_DATA).forEach(function(k){var a=PT_TAG_DATA[k];var j=a.indexOf(tid);if(j>-1)a.splice(j,1);});renderTagList(ph);}
+function editTagColor(id,val,ph){var t=PT_TAG_MAP[id];if(t)t.color=val;var a=ALL_PT_TAGS.find(function(x){return x.id===id;});if(a)a.color=val;saveAll();renderTagList(ph);}
+function toggleTag(ph,tid){var tags=getTags(ph);var i=tags.indexOf(tid);if(i>-1)tags.splice(i,1);else tags.push(tid);saveAll();renderTagList(ph);}
+function addTag(ph){var n=document.getElementById('ntName').value.trim();if(!n)return;var c=document.getElementById('ntColor').value;var id='c'+Date.now();ALL_PT_TAGS.push({id:id,name:n,color:c});PT_TAG_MAP[id]={id:id,name:n,color:c};getTags(ph).push(id);document.getElementById('ntName').value='';saveAll();renderTagList(ph);}
+function delTag(tid,ph){var i=ALL_PT_TAGS.findIndex(function(t){return t.id===tid;});if(i>-1)ALL_PT_TAGS.splice(i,1);delete PT_TAG_MAP[tid];Object.keys(PT_TAG_DATA).forEach(function(k){var a=PT_TAG_DATA[k];var j=a.indexOf(tid);if(j>-1)a.splice(j,1);});saveAll();renderTagList(ph);}
 function moveTag(i,dir,ph){var j=i+dir;if(j<0||j>=ALL_PT_TAGS.length)return;var tmp=ALL_PT_TAGS[i];ALL_PT_TAGS[i]=ALL_PT_TAGS[j];ALL_PT_TAGS[j]=tmp;saveAll();renderTagList(ph);}
 function clearAllTags(ph){if(!confirm('\u78ba\u5b9a\u522a\u9664\u5168\u90e8\u6a19\u7c64\uff1f\u6240\u6709\u75c5\u60a3\u8eab\u4e0a\u7684\u6a19\u7c64\u4e5f\u6703\u4e00\u4f75\u79fb\u9664\u3002'))return;ALL_PT_TAGS.length=0;Object.keys(PT_TAG_MAP).forEach(function(k){delete PT_TAG_MAP[k];});Object.keys(PT_TAG_DATA).forEach(function(k){if(PT_TAG_DATA[k])PT_TAG_DATA[k].length=0;});saveAll();renderTagList(ph);showToast('\u5df2\u522a\u9664\u5168\u90e8\u6a19\u7c64');}
 /* 病患課程 */
