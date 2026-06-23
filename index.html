@@ -66,6 +66,7 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 @keyframes bellRing{0%,50%,100%{transform:rotate(0)}55%{transform:rotate(12deg)}60%{transform:rotate(-10deg)}65%{transform:rotate(8deg)}70%{transform:rotate(-6deg)}75%{transform:rotate(0)}}
 .sync-btn.spinning svg{animation:spin360 .8s linear infinite}
 @keyframes spin360{to{transform:rotate(360deg)}}
+@keyframes alertSlide{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 .notify-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--danger,#e05c5c);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 4px rgba(224,92,92,.4)}
 .content{padding:24px;background:var(--bg);flex:1;overflow:auto}
 .sw-label{font-size:12px;color:var(--slate);font-weight:600}
@@ -461,6 +462,9 @@ function shell(active,title,body,topRight){
 function syncBtnHTML(){
   return '<button class="notify-bell sync-btn" id="syncBtn" onclick="manualSync()" title="同步個案預約與初診表"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>';
 }
+function syncToolBtnHTML(){
+  return '<button class="btn gray sm sync-btn" id="syncBtn" onclick="manualSync()" title="同步個案線上預約與初診表"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> 同步</button>';
+}
 function manualSync(){
   var b=document.getElementById('syncBtn');if(b)b.classList.add('spinning');
   var stop=function(){var bb=document.getElementById('syncBtn');if(bb)bb.classList.remove('spinning');try{checkPendingCount();}catch(e){}};
@@ -486,26 +490,52 @@ function refreshNotifyBell(){
 var _audioCtx=null;
 function playNotifySound(){
   try{
-    if(!_audioCtx){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;_audioCtx=new AC();}
-    if(_audioCtx.state==='suspended')_audioCtx.resume();
-    var ctx=_audioCtx;var now=ctx.currentTime;
-    // 雙音「叮咚」：兩個音符
-    [{f:880,t:0,d:0.18},{f:1174,t:0.16,d:0.32}].forEach(function(n){
-      var osc=ctx.createOscillator();var gain=ctx.createGain();
-      osc.type='sine';osc.frequency.value=n.f;
-      osc.connect(gain);gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(0,now+n.t);
-      gain.gain.linearRampToValueAtTime(0.22,now+n.t+0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001,now+n.t+n.d);
-      osc.start(now+n.t);osc.stop(now+n.t+n.d);
-    });
+    var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    if(!_audioCtx)_audioCtx=new AC();
+    var play=function(){
+      var ctx=_audioCtx;var now=ctx.currentTime;
+      // 雙音「叮咚」：兩個音符
+      [{f:880,t:0,d:0.18},{f:1174,t:0.16,d:0.32}].forEach(function(n){
+        var osc=ctx.createOscillator();var gain=ctx.createGain();
+        osc.type='sine';osc.frequency.value=n.f;
+        osc.connect(gain);gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0,now+n.t);
+        gain.gain.linearRampToValueAtTime(0.22,now+n.t+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001,now+n.t+n.d);
+        osc.start(now+n.t);osc.stop(now+n.t+n.d);
+      });
+    };
+    if(_audioCtx.state==='suspended'){var pr=_audioCtx.resume();if(pr&&pr.then){pr.then(play).catch(function(){});}else{play();}}
+    else{play();}
   }catch(e){}
 }
+// 首次／每次使用者互動時喚醒音訊環境（突破瀏覽器自動播放限制）
+function unlockAudio(){try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;if(!_audioCtx)_audioCtx=new AC();if(_audioCtx.state==='suspended')_audioCtx.resume();}catch(e){}}
+/* ── 更強的警示 ── */
+var _notifyPermAsked=false;
+function askNotifyPerm(){if(_notifyPermAsked)return;_notifyPermAsked=true;try{if(('Notification' in window)&&Notification.permission==='default')Notification.requestPermission();}catch(e){}}
+function _onFirstGesture(){unlockAudio();askNotifyPerm();}
+if(typeof document!=='undefined'){['click','touchend','keydown'].forEach(function(ev){document.addEventListener(ev,_onFirstGesture,true);});}
+// 系統通知彈窗（背景分頁也看得到）
+function fireSystemNotify(title,body){try{if(!('Notification' in window))return;if(Notification.permission!=='granted')return;var icon=(typeof CLINIC_LOGO!=='undefined'&&CLINIC_LOGO)?CLINIC_LOGO:undefined;var n=new Notification(title,{body:body,icon:icon,tag:'navi-notify',renotify:true});n.onclick=function(){try{window.focus();}catch(e){}try{n.close();}catch(e){}};}catch(e){}}
+// 置頂常駐橫幅（天空藍、不自動消失）
+function showAlertBanner(msg){try{var ex=document.getElementById('alertBanner');if(ex)ex.remove();var d=document.createElement('div');d.id='alertBanner';d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#1a4d68,#2b6f93);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 3px 14px rgba(0,0,0,.22);font-size:14px;animation:alertSlide .3s ease';d.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span style="flex:1;font-weight:600">'+msg+'</span><button onclick="manualSync();var b=document.getElementById(\'alertBanner\');if(b)b.remove();" style="background:#fff;color:#1a4d68;border:none;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;white-space:nowrap">立即同步</button><button onclick="var b=document.getElementById(\'alertBanner\');if(b)b.remove();" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;padding:0 4px">&times;</button>';document.body.appendChild(d);}catch(e){}}
+// 分頁標題閃爍（視窗在背景時）
+var _titleFlash=null,_origTitle=null;
+function startTitleFlash(msg){try{if(!_origTitle)_origTitle=document.title;if(_titleFlash)return;var on=false;_titleFlash=setInterval(function(){document.title=(on?_origTitle:'🔔 '+msg);on=!on;},1000);}catch(e){}}
+function stopTitleFlash(){try{if(_titleFlash){clearInterval(_titleFlash);_titleFlash=null;}if(_origTitle){document.title=_origTitle;}}catch(e){}}
+if(typeof window!=='undefined'){window.addEventListener('focus',stopTitleFlash);document.addEventListener('visibilitychange',function(){if(!document.hidden)stopTitleFlash();});}
 // 新增一筆通知到歷史（最多保留 5 筆）
 function addNotify(kind,count){
   NOTIFY_LOG.unshift({id:'n'+Date.now()+Math.random().toString(36).slice(2,6),kind:kind,count:count,at:new Date().toISOString(),read:false});
   if(NOTIFY_LOG.length>5)NOTIFY_LOG=NOTIFY_LOG.slice(0,5);
   playNotifySound();
+  try{refreshNotifyBell();}catch(e){}
+  var label=(kind==='bk'?'收到新的線上預約':'收到新的初診表填寫');
+  try{showToast(label+'，請點同步匯入');}catch(e){}
+  try{fireSystemNotify('領航物理治療所',label+'，請進系統點「立即同步」匯入');}catch(e){}
+  try{showAlertBanner(label+'，請點「立即同步」匯入');}catch(e){}
+  try{if(document.hidden)startTitleFlash(label);}catch(e){}
 }
 // 查詢待匯入數量；若比上次多，建立通知
 function checkPendingCount(){
@@ -1125,7 +1155,7 @@ function renderCal(){
 views.bookings=function(){
   var _showFilter=BK_ADMIN_EMAILS.indexOf(((currentUser&&currentUser.email)||'').toLowerCase())>=0;
   return shell('bookings','預約管理','<div id="calMount"></div>',
-    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button>'+(_showFilter?'<button id="calFilterBtn" class="btn gray sm" onclick="toggleCalFilter()" title="篩選治療師"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> 篩選<span id="calFilterDot" style="display:'+(anyFilter()?'inline-block':'none')+';width:6px;height:6px;border-radius:50%;background:var(--mint-d);margin-left:5px;vertical-align:middle"></span></button><div class="row" id="calPills" style="gap:5px;display:none;flex-wrap:wrap">'+calPills()+'</div>':'')+'<button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
+    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button>'+(_showFilter?'<button id="calFilterBtn" class="btn gray sm" onclick="toggleCalFilter()" title="篩選治療師"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> 篩選<span id="calFilterDot" style="display:'+(anyFilter()?'inline-block':'none')+';width:6px;height:6px;border-radius:50%;background:var(--mint-d);margin-left:5px;vertical-align:middle"></span></button><div class="row" id="calPills" style="gap:5px;display:none;flex-wrap:wrap">'+calPills()+'</div>':'')+''+syncToolBtnHTML()+'<button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
 };
 function addBkModal(){
   var _tl=BK_ADMIN_EMAILS.indexOf(((currentUser&&currentUser.email)||'').toLowerCase())>=0?THERAPISTS:THERAPISTS.filter(function(t){return t.id===((currentUser&&currentUser.therapistId)||'');});
@@ -1392,7 +1422,7 @@ views.patients=function(){
     return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+key+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+key+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+esc(p.name)+'\',\''+key+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+key+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+key+'\')">編輯</button></td></tr>';
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
-  return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
+  return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div>'+syncToolBtnHTML()+'<button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
 };
 function filterPt(q){q=(q||'').toLowerCase();document.querySelectorAll('#ptBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 var _ptGender='';
