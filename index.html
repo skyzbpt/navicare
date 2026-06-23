@@ -258,10 +258,11 @@ var SERVICES=[
 ];
 var SVC_ID=18;
 var THERAPISTS=[
-  {id:'Sky',name:'張博源',title:'行銷總監 CMO',base:0,rate:0,workDays:[],week:{},leaves:[]},
-  {id:'wujs',name:'巫俊杉',title:'院長',base:0,rate:0,workDays:[],week:{},leaves:[]}
+  {id:'none',name:'不指定',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]},
+  {id:'wujs',name:'巫俊杉',title:'院長',base:0,rate:0,workDays:[],week:{},leaves:[]},
+  {id:'Sky',name:'張博源sky',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]}
 ];
-var TC={Sky:'#1a4d68',wujs:'#2DC8A0'};
+var TC={none:'#5B8DB8',wujs:'#2DC8A0',Sky:'#1a4d68'};
 var TN={Sky:'張博源',wujs:'巫俊杉'};
 var COLORS=['#1a4d68','#2DC8A0','#F59E0B','#8B5CF6','#EC4899','#3b82f6','#06b6d4'];
 var ST={
@@ -311,6 +312,13 @@ ALL_PT_TAGS.forEach(function(t){PT_TAG_MAP[t.id]=t;});
 var PT_TAG_DATA={};
 var T_SVC_RATES={};
 var CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY01160081號',owner:'巫俊杉',address:'台北市北投區西安街二段167號3樓',tel:'（02）2826-1698',calendarId:'primary'};
+/* 行事曆同步規則：
+   預設所有預約都進 SYNC_CALENDAR_ID（nycuptc）。
+   THERAPIST_CALENDAR 為例外表（key = 治療師 id）：列在這裡的治療師，預約改寫進指定行事曆。
+   目前：張博源（id 'Sky'）的預約 → skyzbpt；其餘所有治療師（含「不指定」）→ nycuptc。
+   寫死，不受伺服器資料影響。操作帳號需對目標行事曆有「變更活動」權限。 */
+var SYNC_CALENDAR_ID='nycuptc@gmail.com';
+var THERAPIST_CALENDAR={ 'Sky':'skyzbpt@gmail.com' };
 var PAYMENTS=[];
 var PAYMENT_ID=1000;
 var STAMPS={clinic:'',owner:''};
@@ -351,9 +359,9 @@ var PAY_LABEL={cash:'現金',transfer:'匯款',card:'刷卡',package:'課程扣�
 /* ============ Google / 角色 ============ */
 var GOOGLE_CLIENT_ID='488516957607-6pt8ofca357qrj5fgpjk8n67i6krvr4d.apps.googleusercontent.com';
 var EMAIL_WHITELIST={
-  'nycuptc@gmail.com':{name:'櫃檯',therapistId:null,role:'admin'},
-  'skyzbpt@gmail.com':{name:'張博源',therapistId:'Sky',role:'admin'},
-  'yewfir@gmail.com':{name:'巫俊杉',therapistId:'wujs',role:'admin'}
+  'nycuptc@gmail.com':{name:'不指定',therapistId:'none',role:'admin'},
+  'yewfir@gmail.com':{name:'巫俊杉',therapistId:'wujs',role:'admin'},
+  'skyzbpt@gmail.com':{name:'張博源sky',therapistId:'Sky',role:'admin'}
 };
 var ROLE_PAGES={
   admin:['dashboard','bookings','patients','soap','analytics','payments','payroll','stamptax','retention','education','schedule','packages','receipt','clinic'],
@@ -919,22 +927,9 @@ function ensureGCal(cb){
 }
 function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.calendarId||'primary');}
-// 從帳號白名單反查治療師對應的 Gmail（作為其個人行事曆 ID）
-function therapistEmail(tid){
-  if(!tid)return '';
-  var found='';
-  Object.keys(EMAIL_WHITELIST).forEach(function(em){
-    if(!found&&EMAIL_WHITELIST[em]&&EMAIL_WHITELIST[em].therapistId===tid)found=em;
-  });
-  return found;
-}
-// 取得某預約應同步的行事曆 ID（優先：治療師手動指定 → 治療師 Gmail → 診所預設）
+// 張博源(Sky)的預約 → skyzbpt；其餘 → SYNC_CALENDAR_ID(nycuptc)
 function calIdForBooking(b){
-  var t=b&&b.t?THERAPISTS.find(function(x){return x.id===b.t;}):null;
-  if(t&&t.calendarId)return t.calendarId;
-  var em=b&&b.t?therapistEmail(b.t):'';
-  if(em)return em;
-  return CLINIC_INFO.calendarId||'primary';
+  return (b&&b.t&&THERAPIST_CALENDAR[b.t])||SYNC_CALENDAR_ID||CLINIC_INFO.calendarId||'primary';
 }
 function gcalUpsert(b){
   var sv=svcOf(b.svc);var startStr=b.date+'T'+fmtTimeMin(b.start)+':00+08:00';var endStr=b.date+'T'+fmtTimeMin(b.start+sv.dur)+':00+08:00';
@@ -943,7 +938,7 @@ function gcalUpsert(b){
   var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(b.gcalEventId){url+='/'+b.gcalEventId;method='PATCH';}
   return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}if(r.status===404&&b.gcalEventId){b.gcalEventId=null;return gcalUpsert(b);}throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));});
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 '+tName(b.t)+' 的 Google 行事曆 ✓');}).catch(function(e){var m=String(e.message||'');var em=therapistEmail(b.t);if(/not found|forbidden|insufficient|404|403/i.test(m)&&em){showToast('同步失敗：請先讓 '+em+' 在 Google 日曆把行事曆「分享給此操作帳號並允許變更活動」');}else{showToast('同步失敗：'+m);}});});}
+function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){showToast('同步失敗：'+(e.message||''));});});}
 function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
 /* listGCalendars / testGCalConnection 已移除（行事曆選擇與測試 UI 已撤除）。預約仍自動同步至 CLINIC_INFO.calendarId。 */
 function pullSubmissions(silent){
@@ -966,8 +961,8 @@ function pullSubmissions(silent){
           var ok=0,fail=0;
           Promise.all(newImported.map(function(nb){return gcalUpsert(nb).then(function(){ok++;}).catch(function(){fail++;});})).then(function(){
             saveAll();
-            if(ok)showToast('已同步 '+ok+' 筆線上預約至 Google 行事曆 ✓'+(fail?'（'+fail+' 筆失敗，請確認治療師行事曆已分享給此帳號）':''));
-            else if(fail)showToast(fail+' 筆線上預約同步失敗，請確認治療師行事曆已分享給此帳號並允許變更活動');
+            if(ok)showToast('已同步 '+ok+' 筆線上預約至 Google 行事曆 ✓'+(fail?'（'+fail+' 筆失敗）':''));
+            else if(fail)showToast(fail+' 筆線上預約同步失敗，請稍後再試');
           });
         };
         if(silent){ if(gcalToken&&Date.now()<gcalTokenExp)_syncImported(); }
@@ -1768,7 +1763,7 @@ function clinicLinksCard(){
   return '<div class="card"><div class="card-head"><h3>線上預約與初診表單連結</h3><span class="tag mint">分享給個案</span></div><div class="card-body"><div class="banner info"><span>i</span><div>把連結或 QR code 分享給個案：貼到 LINE 官方帳號、IG 簡介，或印出 QR 貼在櫃台。個案線上送出的預約與初診表，會在總覽的通知鈴鐺出現，點鈴鐺裡的「重新整理」即可同步匯入後台。</div></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+block('線上預約','客戶自助選服務、治療師、時段',L.book,'qr-book','copyText(clinicLinks().book)','var(--mint)')+block('初診表單','首次就診前填寫基本資料與同意書',L.intake,'qr-intake','copyText(clinicLinks().intake)','var(--navy)')+'</div></div></div>';
 }
 views.clinic=function(){
-  var tRows=THERAPISTS.map(function(t){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';return '<tr><td><div class="t-name">'+t.name+'</div><div class="t-sub">'+esc(t.title)+'</div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
+  var tRows=THERAPISTS.map(function(t,ti){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var _up=ti>0?'<button class="btn sm ghost" style="padding:1px 7px" onclick="moveT(\''+t.id+'\',-1)" title="上移">↑</button>':'<button class="btn sm ghost" style="padding:1px 7px;opacity:.25" disabled>↑</button>';var _dn=ti<THERAPISTS.length-1?'<button class="btn sm ghost" style="padding:1px 7px" onclick="moveT(\''+t.id+'\',1)" title="下移">↓</button>':'<button class="btn sm ghost" style="padding:1px 7px;opacity:.25" disabled>↓</button>';var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';return '<tr><td><div class="row" style="gap:8px;align-items:center"><div style="display:flex;flex-direction:column;gap:2px">'+_up+_dn+'</div><div><div class="t-name">'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title)+'</div></div></div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
   return shell('clinic','診所管理',
     clinicLinksCard()+
     reminderTemplateCard()+
@@ -1793,9 +1788,10 @@ function addTAccountEdit(tid){var name=document.getElementById('ta-name').value.
 function setStaffRole(email,role){var s=EMAIL_WHITELIST[email];if(!s)return;var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});if(s.role==='admin'&&role!=='admin'&&admins.length<=1){showToast('至少需保留一位管理員');tEditModal(s.therapistId,'account');return;}s.role=role;showToast('權限已更新');saveAll();}
 function unlinkStaffEdit(email,tid){var s=EMAIL_WHITELIST[email];if(!s)return;var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});if(s.role==='admin'&&admins.length<=1){showToast('至少需保留一位管理員');return;}delete EMAIL_WHITELIST[email];tEditModal(tid,'account');showToast('已移除帳號');saveAll();}
 function addTModal(){modal('<div class="modal-head" style="background:var(--navy)">新增治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="grid2"><div class="field"><label>姓名</label><input id="nt-name"></div><div class="field"><label>職稱</label><input id="nt-title" value="物理治療師"></div></div><div class="field"><label>代表色</label><input id="nt-color" type="color" value="'+COLORS[THERAPISTS.length%COLORS.length]+'" style="width:60px;height:36px"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitT()">新增</button></div>');}
-function submitT(){var name=document.getElementById('nt-name').value.trim();if(!name){showToast('請填寫姓名');return;}var id='T'+Date.now();THERAPISTS.push({id:id,name:name,title:document.getElementById('nt-title').value||'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]});TN[id]=name;TC[id]=document.getElementById('nt-color').value;closeModal();go('clinic');showToast('治療師已新增');}
+function submitT(){var name=document.getElementById('nt-name').value.trim();if(!name){showToast('請填寫姓名');return;}var id='T'+Date.now();THERAPISTS.push({id:id,name:name,title:document.getElementById('nt-title').value||'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]});TN[id]=name;TC[id]=document.getElementById('nt-color').value;saveAll();closeModal();go('clinic');showToast('治療師已新增');}
 function delT(tid){if(THERAPISTS.length<=1){showToast('至少需保留一位治療師');return;}modal('<div class="modal-head" style="background:var(--danger)">刪除治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此治療師？相關預約紀錄不受影響。</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn danger" onclick="confirmDelT(\''+tid+'\')">確定刪除</button></div>');}
-function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;closeModal();go('clinic');showToast('已刪除');}
+function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;saveAll();closeModal();go('clinic');showToast('已刪除');}
+function moveT(id,dir){var i=THERAPISTS.findIndex(function(x){return x.id===id;});if(i<0)return;var j=i+dir;if(j<0||j>=THERAPISTS.length)return;var tmp=THERAPISTS[i];THERAPISTS[i]=THERAPISTS[j];THERAPISTS[j]=tmp;saveAll();go('clinic');}
 
 /* 線上預約／初診的病患端為獨立的 LIFF 頁面（liff-book.html / liff-intake.html），此後台僅負責「發布到線上預約」，不需要在本檔載入 catalog。 */
 
