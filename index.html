@@ -260,10 +260,10 @@ var SVC_ID=18;
 var THERAPISTS=[
   {id:'none',name:'不指定',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]},
   {id:'wujs',name:'巫俊杉',title:'院長',base:0,rate:0,workDays:[],week:{},leaves:[]},
-  {id:'Sky',name:'張博源sky',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]}
+  {id:'Sky',name:'張博源',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]}
 ];
 var TC={none:'#5B8DB8',wujs:'#2DC8A0',Sky:'#1a4d68'};
-var TN={none:'不指定',wujs:'巫俊杉',Sky:'張博源sky'};
+var TN={none:'不指定',wujs:'巫俊杉',Sky:'張博源'};
 var COLORS=['#1a4d68','#2DC8A0','#F59E0B','#8B5CF6','#EC4899','#3b82f6','#06b6d4'];
 var ST={
   confirmed:{label:'已確認',bg:'#3b82f6',light:'#eff6ff'},
@@ -361,7 +361,7 @@ var GOOGLE_CLIENT_ID='488516957607-6pt8ofca357qrj5fgpjk8n67i6krvr4d.apps.googleu
 var EMAIL_WHITELIST={
   'nycuptc@gmail.com':{name:'不指定',therapistId:'none',role:'admin'},
   'yewfir@gmail.com':{name:'巫俊杉',therapistId:'wujs',role:'admin'},
-  'skyzbpt@gmail.com':{name:'張博源sky',therapistId:'Sky',role:'admin'}
+  'skyzbpt@gmail.com':{name:'張博源',therapistId:'Sky',role:'admin'}
 };
 var ROLE_PAGES={
   admin:['dashboard','bookings','patients','soap','analytics','payments','payroll','stamptax','retention','education','schedule','packages','receipt','clinic'],
@@ -1408,7 +1408,7 @@ function ptDetail(ph){
     '<div class="grid2"><div class="field"><label>出生年月日</label><input id="pe-dob" type="date" min="1900-01-01" max="'+todayStr()+'" value="'+(p.dob||(it&&it.dob)||'')+'"></div><div class="field"><label>身分證字號</label><input id="pe-id" value="'+esc(p.idNum||(it&&it.idNum)||'')+'" style="font-family:monospace"></div></div>'+
     '<div class="field"><label>LINE User ID</label>'+(p.lineId?'<div class="row" style="gap:6px"><input value="'+esc(p.lineId)+'" readonly style="flex:1;font-family:monospace;font-size:12px;background:var(--navy-l)"><button class="btn sm ghost" onclick="copyText(\''+esc(p.lineId)+'\')">複製</button></div>':'<div class="row" style="gap:6px"><input value="（未綁定）" readonly style="flex:1;color:var(--slate);background:var(--navy-l)"><button class="btn sm gray" onclick="closeModal();lineModal(\''+ph+'\')">綁定</button></div>')+'</div>'+
     '<div class="field"><label>備註</label><textarea id="pe-note" style="height:50px;resize:none">'+esc(p.note||'')+'</textarea></div>'+
-    (it?'<div class="banner info"><span>i</span><div>初診主訴：'+esc(it.complaint||'-')+'</div></div>':'')+'</div>'+
+    (it?'<div class="banner info"><span>i</span><div>初診症狀描述：'+esc(it.complaint||'-')+'</div></div>':'')+'</div>'+
     '<div class="edit-panel" id="ptp-bk"><table><thead><tr><th>日期</th><th>服務</th><th>治療師</th><th>狀態</th></tr></thead><tbody>'+bkRows+'</tbody></table></div>'+
     '<div class="edit-panel" id="ptp-pay">'+ptPayPanel(ph)+'</div>'+
     '<div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="delPt(\''+ph+'\')">刪除病患</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn" onclick="savePt(\''+ph+'\')">儲存</button></div></div>');
@@ -1448,7 +1448,7 @@ function viewIntake(ph){
   var html=sec('基本資料')+row('姓名',d.name)+row('性別',g)+row('出生年月日',d.dob)+row('身分證字號',d.idNum)+row('電話',d.phone)+row('地址',d.address)+row('職業',d.occupation)
     +(hasEmg?sec('緊急聯絡人')+row('姓名',d.emergencyName)+row('電話',d.emergencyPhone):'')
     +(ref?sec('得知管道')+row('如何得知',ref):'')
-    +sec('主訴與症狀')+row('主訴',d.complaint)+row('持續時間',d.duration)+(d.vas!=null?row('疼痛強度',(d.vas||0)+' 分（VAS 0-10）'):'')+row('患處',(d.bodyParts||[]).join('、'))
+    +sec('主訴與症狀')+row('症狀描述',d.complaint)+row('持續時間',d.duration)+(d.vas!=null?row('疼痛強度',(d.vas||0)+' 分（VAS 0-10）'):'')+row('患處',(d.bodyParts||[]).join('、'))
     +(hasHist?sec('健康史')+block('已知病史',d.medicalHistory)+block('受傷經驗',d.injuryHistory)+block('手術經驗',d.surgeryHistory)+block('運動習慣',d.exerciseHabit):'');
   modal('<div class="modal-head" style="background:var(--navy)">初診問卷 - '+esc(d.name||'')+'<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+html+'</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button></div>');
 }
