@@ -931,15 +931,56 @@ function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.c
 function calIdForBooking(b){
   return (b&&b.t&&THERAPIST_CALENDAR[b.t])||SYNC_CALENDAR_ID||CLINIC_INFO.calendarId||'primary';
 }
-function gcalUpsert(b){
-  var sv=svcOf(b.svc);var startStr=b.date+'T'+fmtTimeMin(b.start)+':00+08:00';var endStr=b.date+'T'+fmtTimeMin(b.start+sv.dur)+':00+08:00';
-  var body={summary:b.name+'｜'+sv.name,description:'治療師：'+tName(b.t)+'\n電話：'+b.phone+(b.note?'\n備註：'+b.note:''),start:{dateTime:startStr,timeZone:'Asia/Taipei'},end:{dateTime:endStr,timeZone:'Asia/Taipei'}};
-  var cid=calId(calIdForBooking(b));
-  var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(b.gcalEventId){url+='/'+b.gcalEventId;method='PATCH';}
-  return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}if(r.status===404&&b.gcalEventId){b.gcalEventId=null;return gcalUpsert(b);}throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));});
+// 一筆預約要同步到哪些行事曆：SYNC_CALENDAR_ID(nycuptc) 一律收全部；列在 THERAPIST_CALENDAR 的治療師再額外寫進自己那本
+function calIdsForBooking(b){
+  var ids=[SYNC_CALENDAR_ID];
+  var ex=b&&b.t&&THERAPIST_CALENDAR[b.t];
+  if(ex&&ids.indexOf(ex)<0)ids.push(ex);
+  return ids;
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){showToast('同步失敗：'+(e.message||''));});});}
+// 舊資料相容：把單一 gcalEventId 歸位到它原本所在的那本行事曆，避免重新同步時產生重複事件
+function gcalMigrate(b){
+  if(b.gcalEventId&&(!b.gcalEvents||!Object.keys(b.gcalEvents).length)){
+    b.gcalEvents=b.gcalEvents||{};
+    b.gcalEvents[calIdForBooking(b)]=b.gcalEventId;
+  }
+}
+function gcalEventBody(b){
+  var sv=svcOf(b.svc);var startStr=b.date+'T'+fmtTimeMin(b.start)+':00+08:00';var endStr=b.date+'T'+fmtTimeMin(b.start+sv.dur)+':00+08:00';
+  return {summary:b.name+'\uFF5C'+sv.name,description:'\u6cbb\u7642\u5e2b\uFF1A'+tName(b.t)+'\n\u96fb\u8a71\uFF1A'+b.phone+(b.note?'\n\u5099\u8a3b\uFF1A'+b.note:''),start:{dateTime:startStr,timeZone:'Asia/Taipei'},end:{dateTime:endStr,timeZone:'Asia/Taipei'}};
+}
+function gcalUpsertOne(b,calRaw){
+  if(!b.gcalEvents)b.gcalEvents={};
+  var body=gcalEventBody(b);var cid=calId(calRaw);var evId=b.gcalEvents[calRaw];
+  var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(evId){url+='/'+evId;method='PATCH';}
+  return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){
+    if(r.ok&&r.data&&r.data.id){b.gcalEvents[calRaw]=r.data.id;if(calRaw===SYNC_CALENDAR_ID)b.gcalEventId=r.data.id;return true;}
+    if(r.status===404&&evId){delete b.gcalEvents[calRaw];return gcalUpsertOne(b,calRaw);}
+    throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));
+  });
+}
+function gcalUpsert(b){
+  gcalMigrate(b);
+  var cals=calIdsForBooking(b);
+  return Promise.all(cals.map(function(c){return gcalUpsertOne(b,c).then(function(){return {c:c,ok:true};},function(e){return {c:c,ok:false,e:e};});})).then(function(rs){
+    var fails=rs.filter(function(x){return !x.ok;});
+    if(fails.length){throw new Error(fails.map(function(x){return x.c+'\uFF08'+((x.e&&x.e.message)||'\u5931\u6557')+'\uFF09';}).join('\u3001'));}
+    return true;
+  });
+}
+function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){saveAll();showToast('\u5df2\u540c\u6b65\u81f3 Google \u884c\u4e8b\u66c6 \u2713');}).catch(function(e){saveAll();showToast('\u90e8\u5206\u540c\u6b65\u5931\u6557\uFF1A'+(e.message||''));});});}
 function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
+// 刪除一筆預約在「所有」已同步行事曆上的事件（含舊資料相容）
+function gcalDeleteBooking(b,cb){
+  if(!b){if(cb)cb();return;}
+  var jobs=[];var map=b.gcalEvents||{};
+  Object.keys(map).forEach(function(c){if(map[c])jobs.push({c:c,ev:map[c]});});
+  if(b.gcalEventId){calIdsForBooking(b).forEach(function(c){if(!map[c])jobs.push({c:c,ev:b.gcalEventId});});}
+  if(!jobs.length){if(cb)cb();return;}
+  ensureGCal(function(){
+    Promise.all(jobs.map(function(j){return fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(j.c)+'/events/'+j.ev,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(){return true;},function(){return false;});})).then(function(){b.gcalEvents={};b.gcalEventId=null;showToast('\u5df2\u5f9e Google \u884c\u4e8b\u66c6\u79fb\u9664 \u2713');if(cb)cb();});
+  });
+}
 /* listGCalendars / testGCalConnection 已移除（行事曆選擇與測試 UI 已撤除）。預約仍自動同步至 CLINIC_INFO.calendarId。 */
 function pullSubmissions(silent){
   if(!RENDER_URL){if(!silent)showToast('請先設定 RENDER_URL');return;}
@@ -1169,14 +1210,14 @@ function saveBk(id){
   delete _pendingStatus[id];
   closeModal();renderCal();
   if(statusChanged&&newStatus==='cancelled'&&prev!=='cancelled'){
-    if(b.gcalEventId){var evt=b.gcalEventId;b.gcalEventId=null;gcalDelete(evt,null,calIdForBooking(b));}
+    gcalDeleteBooking(b);
     var p=getPatient(b.phone);if(p&&p.lineId){sendLineMsg(p.lineId,lineTemplates(b).cancel);showToast('已儲存並通知取消');}else{showToast('已儲存（已取消，病患未綁定 LINE）');}
   }else{
     showToast('已儲存');syncOne(id);
   }
 }
 function delBk(id){modal('<div class="modal-head" style="background:var(--danger)">刪除預約<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此預約？</div></div><div class="modal-foot"><button class="btn gray" onclick="bkDetail('+id+')">取消</button><button class="btn danger" onclick="confirmDelBk('+id+')">確定刪除</button></div>');}
-function confirmDelBk(id){var b=BOOKINGS.find(function(x){return x.id===id;});var evtId=b&&b.gcalEventId;var bcid=b?calIdForBooking(b):'';closeModal();if(evtId){gcalDelete(evtId,function(){var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);renderCal();},bcid);}else{var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);renderCal();showToast('已刪除');}}
+function confirmDelBk(id){var b=BOOKINGS.find(function(x){return x.id===id;});closeModal();var done=function(){var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);saveAll();renderCal();};var has=b&&((b.gcalEvents&&Object.keys(b.gcalEvents).length)||b.gcalEventId);if(has){gcalDeleteBooking(b,done);}else{done();showToast('已刪除');}}
 
 /* ============ 結帳 / 收據（含內部減免）============ */
 var _coPay='cash';var _coPkg=null;var _coSvcPrice=0;var _coDiscount=0;
