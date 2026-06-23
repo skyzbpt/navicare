@@ -919,10 +919,21 @@ function ensureGCal(cb){
 }
 function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.calendarId||'primary');}
-// 取得某預約應同步的行事曆 ID（優先用治療師個人行事曆，否則用診所預設）
+// 從帳號白名單反查治療師對應的 Gmail（作為其個人行事曆 ID）
+function therapistEmail(tid){
+  if(!tid)return '';
+  var found='';
+  Object.keys(EMAIL_WHITELIST).forEach(function(em){
+    if(!found&&EMAIL_WHITELIST[em]&&EMAIL_WHITELIST[em].therapistId===tid)found=em;
+  });
+  return found;
+}
+// 取得某預約應同步的行事曆 ID（優先：治療師手動指定 → 治療師 Gmail → 診所預設）
 function calIdForBooking(b){
   var t=b&&b.t?THERAPISTS.find(function(x){return x.id===b.t;}):null;
   if(t&&t.calendarId)return t.calendarId;
+  var em=b&&b.t?therapistEmail(b.t):'';
+  if(em)return em;
   return CLINIC_INFO.calendarId||'primary';
 }
 function gcalUpsert(b){
@@ -932,7 +943,7 @@ function gcalUpsert(b){
   var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(b.gcalEventId){url+='/'+b.gcalEventId;method='PATCH';}
   return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}if(r.status===404&&b.gcalEventId){b.gcalEventId=null;return gcalUpsert(b);}throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));});
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){showToast('同步失敗：'+e.message);});});}
+function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 '+tName(b.t)+' 的 Google 行事曆 ✓');}).catch(function(e){var m=String(e.message||'');var em=therapistEmail(b.t);if(/not found|forbidden|insufficient|404|403/i.test(m)&&em){showToast('同步失敗：請先讓 '+em+' 在 Google 日曆把行事曆「分享給此操作帳號並允許變更活動」');}else{showToast('同步失敗：'+m);}});});}
 function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
 /* listGCalendars / testGCalConnection 已移除（行事曆選擇與測試 UI 已撤除）。預約仍自動同步至 CLINIC_INFO.calendarId。 */
 function pullSubmissions(silent){
@@ -941,14 +952,27 @@ function pullSubmissions(silent){
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     var bks=(data&&data.bookings)||[];var ins=(data&&data.intakes)||[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
-    var ackIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0;
+    var ackIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0,newImported=[];
     ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;newIntake++;});
-    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
+    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}var _nb={id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'};BOOKINGS.push(_nb);newImported.push(_nb);var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
       showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')+(skipBk?'（'+skipBk+' 筆因時段衝突未匯入）':''));
       if(_curView==='bookings')renderCal();else if(_curView==='patients'||_curView==='dashboard')go(_curView);
+      // 將新匯入的線上預約同步至對應治療師的 Google 行事曆（依 email 分流）
+      if(newImported.length){
+        var _syncImported=function(){
+          var ok=0,fail=0;
+          Promise.all(newImported.map(function(nb){return gcalUpsert(nb).then(function(){ok++;}).catch(function(){fail++;});})).then(function(){
+            saveAll();
+            if(ok)showToast('已同步 '+ok+' 筆線上預約至 Google 行事曆 ✓'+(fail?'（'+fail+' 筆失敗，請確認治療師行事曆已分享給此帳號）':''));
+            else if(fail)showToast(fail+' 筆線上預約同步失敗，請確認治療師行事曆已分享給此帳號並允許變更活動');
+          });
+        };
+        if(silent){ if(gcalToken&&Date.now()<gcalTokenExp)_syncImported(); }
+        else ensureGCal(_syncImported);
+      }
     }else if(skipBk){showToast(skipBk+' 筆預約因時段衝突未匯入，請至預約管理手動調整');
     }else if(!silent){showToast('沒有可匯入的資料');}
     if(ackIds.length){fetch(RENDER_URL+'/ack-submissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ackIds})}).catch(function(){});}
