@@ -64,9 +64,8 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .notify-bell.has-new{color:var(--mint-d,#1f9e7e)}
 .notify-bell.has-new svg{animation:bellRing 2s ease-in-out infinite}
 @keyframes bellRing{0%,50%,100%{transform:rotate(0)}55%{transform:rotate(12deg)}60%{transform:rotate(-10deg)}65%{transform:rotate(8deg)}70%{transform:rotate(-6deg)}75%{transform:rotate(0)}}
-.sync-btn.spinning svg{animation:spin360 .8s linear infinite}
-@keyframes spin360{to{transform:rotate(360deg)}}
-@keyframes alertSlide{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .8s linear infinite;transform-origin:center}
 .notify-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--danger,#e05c5c);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 4px rgba(224,92,92,.4)}
 .content{padding:24px;background:var(--bg);flex:1;overflow:auto}
 .sw-label{font-size:12px;color:var(--slate);font-weight:600}
@@ -261,12 +260,12 @@ var SERVICES=[
 ];
 var SVC_ID=18;
 var THERAPISTS=[
-  {id:'none',name:'不指定',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]},
-  {id:'wujs',name:'巫俊杉',title:'院長',base:0,rate:0,workDays:[],week:{},leaves:[]},
+  {id:'nycu',name:'不指定',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]},
+  {id:'wujs',name:'巫俊杉',title:'院長｜物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]},
   {id:'Sky',name:'張博源',title:'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]}
 ];
-var TC={none:'#5B8DB8',wujs:'#2DC8A0',Sky:'#1a4d68'};
-var TN={none:'不指定',wujs:'巫俊杉',Sky:'張博源'};
+var TC={nycu:'#94a3b8',wujs:'#2DC8A0',Sky:'#1a4d68'};
+var TN={nycu:'不指定',wujs:'巫俊杉',Sky:'張博源'};
 var COLORS=['#1a4d68','#2DC8A0','#F59E0B','#8B5CF6','#EC4899','#3b82f6','#06b6d4'];
 var ST={
   confirmed:{label:'已確認',bg:'#3b82f6',light:'#eff6ff'},
@@ -300,19 +299,21 @@ var EDU_ID=100;
 var EDU_SENT={};
 var EDU_CATS=['全部','疼痛管理','運動治療','顱薦椎','身心靈','生活衛教'];
 var eduFilter='全部';
-var ALL_PT_TAGS=[];
+var ALL_PT_TAGS=[
+  {id:'low_back',name:'下背痛',color:'#ef4444'},
+  {id:'neck',name:'頸肩痛',color:'#f97316'},
+  {id:'cycling',name:'公路車族',color:'#3b82f6'},
+  {id:'headache',name:'頭痛',color:'#8b5cf6'},
+  {id:'cranio',name:'顱薦椎',color:'#06b6d4'},
+  {id:'energy',name:'能量療癒',color:'#2DC8A0'},
+  {id:'vip',name:'VIP',color:'#f59e0b'},
+  {id:'new',name:'新患',color:'#6366f1'}
+];
 var PT_TAG_MAP={};
 ALL_PT_TAGS.forEach(function(t){PT_TAG_MAP[t.id]=t;});
 var PT_TAG_DATA={};
 var T_SVC_RATES={};
 var CLINIC_INFO={name:'領航物理治療所',reg:'北市衛北物字第QY01160081號',owner:'巫俊杉',address:'台北市北投區西安街二段167號3樓',tel:'（02）2826-1698',calendarId:'primary'};
-/* 行事曆同步規則（單一帳號、免分享）：
-   所有預約一律同步到「目前登入帳號自己的行事曆」（'primary'）。
-   只要固定用同一個帳號登入操作，所有預約就都集中在那一本，完全不需要把行事曆分享給別人。
-   若日後想讓某位治療師的預約「額外」也寫進指定行事曆，再於 THERAPIST_CALENDAR 加一行
-   （key = 治療師 id、值 = 該行事曆 email），但那會需要操作帳號對該行事曆有「變更活動」權限。 */
-var SYNC_CALENDAR_ID='primary';
-var THERAPIST_CALENDAR={};
 var PAYMENTS=[];
 var PAYMENT_ID=1000;
 var STAMPS={clinic:'',owner:''};
@@ -353,36 +354,21 @@ var PAY_LABEL={cash:'現金',transfer:'匯款',card:'刷卡',package:'課程扣�
 /* ============ Google / 角色 ============ */
 var GOOGLE_CLIENT_ID='488516957607-6pt8ofca357qrj5fgpjk8n67i6krvr4d.apps.googleusercontent.com';
 var EMAIL_WHITELIST={
-  'nycuptc@gmail.com':{name:'不指定',therapistId:'none',role:'admin'},
+  'nycuptc@gmail.com':{name:'不指定',therapistId:'nycu',role:'admin'},
   'yewfir@gmail.com':{name:'巫俊杉',therapistId:'wujs',role:'admin'},
   'skyzbpt@gmail.com':{name:'張博源',therapistId:'Sky',role:'admin'}
-};
-var ROLE_PAGES={
+};var ROLE_PAGES={
   admin:['dashboard','bookings','patients','soap','analytics','payments','payroll','stamptax','retention','education','schedule','packages','receipt','clinic'],
   therapist:['bookings','soap','education','schedule']
 };
 var ROLE_LABELS={admin:'管理員',therapist:'治療師'};
 var currentUser=null;
-/* 預約編輯權限：BK_ADMIN_EMAILS 內的帳號可更改所有人的預約；其餘帳號（治療師）只能更改 b.t 等於自己 therapistId 的預約。 */
-var BK_ADMIN_EMAILS=['nycuptc@gmail.com'];
-function canEditBk(b){
-  var u=currentUser||{};
-  if(BK_ADMIN_EMAILS.indexOf((u.email||'').toLowerCase())>=0)return true;
-  if(!b)return true;
-  return b.t===u.therapistId;
-}
-/* 排班權限：BK_ADMIN_EMAILS 內帳號可設定所有人排班；其餘帳號只能設定自己（tid===自己 therapistId）。 */
-function canManageTherapist(tid){
-  var u=currentUser||{};
-  if(BK_ADMIN_EMAILS.indexOf((u.email||'').toLowerCase())>=0)return true;
-  return tid===u.therapistId;
-}
 var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false,gmailToken=null;
 
 /* ============ 共用工具 ============ */
 function svcOf(id){var s=SERVICES.find(function(x){return x.id===id;});return s||{name:'-',price:0,dur:0};}
 function fmtNT(n){return 'NT$'+(Number(n)||0).toLocaleString();}
-function tName(id){var t=THERAPISTS.find(function(x){return x.id===id;});return (t&&t.name)||TN[id]||id;}
+function tName(id){return TN[id]||id;}
 function tColor(id){return TC[id]||'#1a4d68';}
 function getPatient(key){return PATIENTS.find(function(p){return (p.phone&&p.phone===key)||(p.pid&&p.pid===key);});}
 function ptKey(p){return p.phone||p.pid||'';}
@@ -454,21 +440,11 @@ function sidebar(active){
 }
 function shell(active,title,body,topRight){
   var right=topRight||('<span style="font-size:12px;color:var(--slate)">'+(currentUser?currentUser.name:'預覽模式')+'</span>');
-  var bell=(active==='dashboard')?(syncBtnHTML()+notifyBellHTML()):'';
-  return '<div class="layout">'+sidebar(active)+'<div class="main"><div class="topbar"><h2>'+title+'</h2><div class="row" style="gap:14px;align-items:center">'+bell+right+'</div></div><div class="content">'+body+'</div></div></div>';
+  var bell=(active==='dashboard')?notifyBellHTML():'';
+  var sync=(active==='dashboard')?syncIconHTML():'';
+  return '<div class="layout">'+sidebar(active)+'<div class="main"><div class="topbar"><h2>'+title+'</h2><div class="row" style="gap:14px;align-items:center">'+sync+bell+right+'</div></div><div class="content">'+body+'</div></div></div>';
 }
 /* ── 通知鈴鐺 ── */
-/* 手動同步按鈕：立即拉取個案線上預約與初診表填寫 */
-function syncBtnHTML(){
-  return '<button class="notify-bell sync-btn" id="syncBtn" onclick="manualSync()" title="同步個案預約與初診表"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>';
-}
-function syncToolBtnHTML(){
-  return '<button class="btn gray sm sync-btn" id="syncBtn" onclick="manualSync()" title="同步個案線上預約與初診表"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> 同步</button>';
-}
-function manualSync(){
-  var b=document.getElementById('syncBtn');if(b)b.classList.add('spinning');
-  reloadNotify(); // 與通知面板的「重新整理」完全相同的同步流程
-}
 var _notifyCount={bk:0,intake:0};
 /* 通知歷史：最多 5 筆，每筆 {id, kind, count, at, read} */
 var NOTIFY_LOG=[];
@@ -488,66 +464,46 @@ function refreshNotifyBell(){
 var _audioCtx=null;
 function playNotifySound(){
   try{
-    var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
-    if(!_audioCtx)_audioCtx=new AC();
-    var play=function(){
-      var ctx=_audioCtx;var now=ctx.currentTime;
-      // 雙音「叮咚」：兩個音符
-      [{f:880,t:0,d:0.18},{f:1174,t:0.16,d:0.32}].forEach(function(n){
-        var osc=ctx.createOscillator();var gain=ctx.createGain();
-        osc.type='sine';osc.frequency.value=n.f;
-        osc.connect(gain);gain.connect(ctx.destination);
-        gain.gain.setValueAtTime(0,now+n.t);
-        gain.gain.linearRampToValueAtTime(0.22,now+n.t+0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001,now+n.t+n.d);
-        osc.start(now+n.t);osc.stop(now+n.t+n.d);
-      });
-    };
-    if(_audioCtx.state==='suspended'){var pr=_audioCtx.resume();if(pr&&pr.then){pr.then(play).catch(function(){});}else{play();}}
-    else{play();}
+    if(!_audioCtx){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;_audioCtx=new AC();}
+    if(_audioCtx.state==='suspended')_audioCtx.resume();
+    var ctx=_audioCtx;var now=ctx.currentTime;
+    // 雙音「叮咚」：兩個音符
+    [{f:880,t:0,d:0.18},{f:1174,t:0.16,d:0.32}].forEach(function(n){
+      var osc=ctx.createOscillator();var gain=ctx.createGain();
+      osc.type='sine';osc.frequency.value=n.f;
+      osc.connect(gain);gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0,now+n.t);
+      gain.gain.linearRampToValueAtTime(0.22,now+n.t+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001,now+n.t+n.d);
+      osc.start(now+n.t);osc.stop(now+n.t+n.d);
+    });
   }catch(e){}
 }
-// 首次／每次使用者互動時喚醒音訊環境（突破瀏覽器自動播放限制）
-function unlockAudio(){try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;if(!_audioCtx)_audioCtx=new AC();if(_audioCtx.state==='suspended')_audioCtx.resume();}catch(e){}}
-/* ── 更強的警示 ── */
-var _notifyPermAsked=false;
-function askNotifyPerm(){if(_notifyPermAsked)return;_notifyPermAsked=true;try{if(('Notification' in window)&&Notification.permission==='default')Notification.requestPermission();}catch(e){}}
-function _onFirstGesture(){unlockAudio();askNotifyPerm();}
-if(typeof document!=='undefined'){['click','touchend','keydown'].forEach(function(ev){document.addEventListener(ev,_onFirstGesture,true);});}
-// 系統通知彈窗（背景分頁也看得到）
-function fireSystemNotify(title,body){try{if(!('Notification' in window))return;if(Notification.permission!=='granted')return;var icon=(typeof CLINIC_LOGO!=='undefined'&&CLINIC_LOGO)?CLINIC_LOGO:undefined;var n=new Notification(title,{body:body,icon:icon,tag:'navi-notify',renotify:true});n.onclick=function(){try{window.focus();}catch(e){}try{n.close();}catch(e){}};}catch(e){}}
-// 置頂常駐橫幅（天空藍、不自動消失）
-function showAlertBanner(msg){try{var ex=document.getElementById('alertBanner');if(ex)ex.remove();var d=document.createElement('div');d.id='alertBanner';d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#1a4d68,#2b6f93);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 3px 14px rgba(0,0,0,.22);font-size:14px;animation:alertSlide .3s ease';d.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span style="flex:1;font-weight:600">'+msg+'</span><button onclick="manualSync();var b=document.getElementById(\'alertBanner\');if(b)b.remove();" style="background:#fff;color:#1a4d68;border:none;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;white-space:nowrap">立即同步</button><button onclick="var b=document.getElementById(\'alertBanner\');if(b)b.remove();" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;padding:0 4px">&times;</button>';document.body.appendChild(d);}catch(e){}}
-// 分頁標題閃爍（視窗在背景時）
-var _titleFlash=null,_origTitle=null;
-function startTitleFlash(msg){try{if(!_origTitle)_origTitle=document.title;if(_titleFlash)return;var on=false;_titleFlash=setInterval(function(){document.title=(on?_origTitle:'🔔 '+msg);on=!on;},1000);}catch(e){}}
-function stopTitleFlash(){try{if(_titleFlash){clearInterval(_titleFlash);_titleFlash=null;}if(_origTitle){document.title=_origTitle;}}catch(e){}}
-if(typeof window!=='undefined'){window.addEventListener('focus',stopTitleFlash);document.addEventListener('visibilitychange',function(){if(!document.hidden)stopTitleFlash();});}
 // 新增一筆通知到歷史（最多保留 5 筆）
-function addNotify(kind,count){
+function addNotify(kind,count,silent){
   NOTIFY_LOG.unshift({id:'n'+Date.now()+Math.random().toString(36).slice(2,6),kind:kind,count:count,at:new Date().toISOString(),read:false});
   if(NOTIFY_LOG.length>5)NOTIFY_LOG=NOTIFY_LOG.slice(0,5);
-  playNotifySound();
-  try{refreshNotifyBell();}catch(e){}
-  var label=(kind==='bk'?'收到新的線上預約':'收到新的初診表填寫');
-  try{showToast(label+'，請點同步匯入');}catch(e){}
-  try{fireSystemNotify('領航物理治療所',label+'，請進系統點「立即同步」匯入');}catch(e){}
-  try{showAlertBanner(label+'，請點「立即同步」匯入');}catch(e){}
-  try{if(document.hidden)startTitleFlash(label);}catch(e){}
+  if(!silent)playNotifySound();
 }
-// 查詢待匯入數量；若比上次多，建立通知
+// 計算「1 個月以上未回診」的個案數（需要關心的名單最緊急的一組）
+function lapsedCount(){try{return careStats().list.filter(function(r){return r.bucket==='m1';}).length;}catch(e){return 0;}}
+// 查詢待匯入數量與待關心名單；若比上次多，建立通知
 function checkPendingCount(){
   if(!RENDER_URL||!currentUser)return;
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
     var bk=((data&&data.bookings)||[]).length;
     var intake=((data&&data.intakes)||[]).length;
+    var lapsed=lapsedCount();
     if(_notifyFirstRun){
       // 首次：只記錄基準，不發通知聲（避免登入時舊資料就響）
-      _lastSeen.bk=bk;_lastSeen.intake=intake;_notifyFirstRun=false;
+      _lastSeen.bk=bk;_lastSeen.intake=intake;_lastSeen.lapsed=lapsed;_notifyFirstRun=false;
+      // 登入時若已有超過一個月未回診的個案，靜默提醒一次（避免重複堆疊同數量的未讀通知）
+      if(lapsed>0&&!NOTIFY_LOG.some(function(n){return n.kind==='care'&&!n.read&&n.count===lapsed;}))addNotify('care',lapsed,true);
     }else{
       if(bk>_lastSeen.bk)addNotify('bk',bk);
       if(intake>_lastSeen.intake)addNotify('intake',intake);
-      _lastSeen.bk=bk;_lastSeen.intake=intake;
+      if(lapsed>(_lastSeen.lapsed||0))addNotify('care',lapsed);
+      _lastSeen.bk=bk;_lastSeen.intake=intake;_lastSeen.lapsed=lapsed;
     }
     _notifyCount.bk=bk;_notifyCount.intake=intake;
     refreshNotifyBell();
@@ -592,15 +548,17 @@ function clearNotifyLog(){
   if(typeof saveAll==='function')saveAll();
 }
 function notifyRowHTML(n){
-  var info=n.kind==='bk'
-    ? {icon:'📅',bg:'var(--mint-l,#edfaf6)',title:'線上預約',desc:n.count+' 筆待匯入'}
-    : {icon:'📋',bg:'var(--navy-l)',title:'初診表單',desc:n.count+' 份待匯入'};
+  var info;
+  if(n.kind==='care')info={icon:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e05c5c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>',bg:'#fef2f2',title:'需要關心的名單',desc:n.count+' 位個案超過一個月未回診'};
+  else if(n.kind==='bk')info={icon:'📅',bg:'var(--mint-l,#edfaf6)',title:'線上預約',desc:n.count+' 筆待匯入'};
+  else info={icon:'📋',bg:'var(--navy-l)',title:'初診表單',desc:n.count+' 份待匯入'};
   var dot=n.read?'':'<span style="width:8px;height:8px;border-radius:50%;background:var(--danger,#e05c5c);flex-shrink:0"></span>';
   var op=n.read?'opacity:.55':'';
+  var act=(n.kind==='care')?'<button class="btn sm ghost" onclick="closeModal();setCareFilter(\'m1\')">查看名單</button>':'';
   return '<div class="row" style="justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);'+op+'" data-nid="'+n.id+'">'
     +'<div class="row" style="gap:10px;align-items:center;min-width:0"><span style="width:36px;height:36px;border-radius:50%;background:'+info.bg+';display:flex;align-items:center;justify-content:center;flex-shrink:0">'+info.icon+'</span>'
     +'<div style="min-width:0"><div style="font-weight:700;font-size:14px">'+info.title+'</div><div class="t-sub">'+info.desc+' · '+notifyTimeAgo(n.at)+'</div></div></div>'
-    +'<div class="row" style="gap:6px;align-items:center;flex-shrink:0">'+dot
+    +'<div class="row" style="gap:6px;align-items:center;flex-shrink:0">'+dot+act
     +(n.read?'':'<button class="btn sm ghost" onclick="markNotifyRead(\''+n.id+'\')">已讀</button>')+'</div></div>';
 }
 function notifyPanelBodyHTML(){
@@ -629,11 +587,10 @@ function openNotifyPanel(){
     +(hasPending?'<button class="btn sm" onclick="pullSubmissions(false);markAllNotifyRead();setTimeout(function(){checkPendingCount();reloadNotify();},1200)">匯入全部</button>':'')
     +'</div></div>');
 }
-// 手動同步：匯入 LIFF 線上預約／初診表的填寫，並更新通知面板（點擊面板不關閉）
-function reloadNotify(btn){
-  var _fin=function(){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}var sb=document.getElementById('syncBtn');if(sb)sb.classList.remove('spinning');};
-  if(btn&&btn.tagName){btn.disabled=true;btn.textContent='同步中…';}
-  if(!RENDER_URL||!currentUser){_fin();return;}
+// 共用同步流程：匯入 LIFF 線上預約／初診表填寫、同步 LINE 好友、更新通知；onStart/onDone 控制各自的 UI 呈現
+function runSync(onStart,onDone){
+  if(typeof onStart==='function')onStart();
+  if(!RENDER_URL||!currentUser){if(typeof onDone==='function')onDone(false);return;}
   pullSubmissions(true); // 匯入 LIFF 線上預約與初診表的填寫
   // 同步 LINE 好友（更新頭貼／待綁定狀態，不跳頁）
   fetch(RENDER_URL+'/line-users').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
@@ -644,15 +601,35 @@ function reloadNotify(btn){
     fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
       var bk=((data&&data.bookings)||[]).length;
       var intake=((data&&data.intakes)||[]).length;
+      var lapsed=lapsedCount();
       if(bk>_lastSeen.bk)addNotify('bk',bk);
       if(intake>_lastSeen.intake)addNotify('intake',intake);
-      _lastSeen.bk=bk;_lastSeen.intake=intake;
+      if(lapsed>(_lastSeen.lapsed||0))addNotify('care',lapsed);
+      _lastSeen.bk=bk;_lastSeen.intake=intake;_lastSeen.lapsed=lapsed;
       _notifyCount.bk=bk;_notifyCount.intake=intake;
       refreshNotifyBell();
       rebuildNotifyPanel();
-      _fin();
-    }).catch(function(){_fin();showToast('讀取失敗，請稍後再試');});
+      if(typeof onDone==='function')onDone(true);
+    }).catch(function(){if(typeof onDone==='function')onDone(false);showToast('讀取失敗，請稍後再試');});
   },1500);
+}
+// 通知面板裡的「重新整理」按鈕
+function reloadNotify(btn){
+  runSync(
+    function(){if(btn&&btn.tagName){btn.disabled=true;btn.textContent='同步中…';}},
+    function(){if(btn&&btn.tagName){btn.disabled=false;btn.textContent='重新整理';}}
+  );
+}
+// 總覽 topbar 的同步 icon（功能與「重新整理」相同）
+function syncIconHTML(){
+  return '<button class="notify-bell" id="syncBtn" onclick="syncIconClick(this)" title="同步線上預約與初診表"><svg id="syncIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>';
+}
+function syncIconClick(btn){
+  var icon=document.getElementById('syncIcon');
+  runSync(
+    function(){if(icon)icon.classList.add('spin');if(btn)btn.disabled=true;},
+    function(ok){if(icon)icon.classList.remove('spin');if(btn)btn.disabled=false;if(ok)showToast('同步完成');}
+  );
 }
 var views={};
 
@@ -708,16 +685,7 @@ function triggerGoogleLogin(){
 }
 
 /* ============ 總覽 ============ */
-function calcRetention(){
-  var byPhone={};
-  BOOKINGS.filter(function(b){return b.status==='completed';}).forEach(function(b){(byPhone[b.phone]=byPhone[b.phone]||[]).push(b.date);});
-  var phones=Object.keys(byPhone);
-  var returning=phones.filter(function(ph){return byPhone[ph].length>1;}).length;
-  var rate=phones.length?Math.round(returning/phones.length*100):0;
-  var today=new Date(todayStr());var lapsed=0;
-  phones.forEach(function(ph){var last=byPhone[ph].slice().sort().pop();if((today-new Date(last))/86400000>60)lapsed++;});
-  return {rate:rate,lapsed:lapsed};
-}
+/* calcRetention 已移除：回流率與回流名單統一由 careStats() 計算（見「客戶回流」區段），避免重複邏輯 */
 /* ============ 手動備份 / 還原 ============ */
 function buildSnapshot(){
   return {SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,EMAIL_WHITELIST:EMAIL_WHITELIST,NOTIFY_LOG:NOTIFY_LOG,_backupAt:new Date().toISOString(),_version:1};
@@ -772,7 +740,11 @@ views.dashboard=function(){
   var tCount={};THERAPISTS.forEach(function(t){tCount[t.id]=done.filter(function(b){return b.t===t.id;}).length;});
   var maxT=Math.max.apply(null,Object.keys(tCount).map(function(k){return tCount[k];}).concat([1]));
   var tRows=THERAPISTS.map(function(t){return '<div class="bar-row"><div class="bl">'+t.name+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(tCount[t.id]/maxT*100)+'%;background:'+tColor(t.id)+'">'+tCount[t.id]+'</div></div></div>';}).join('')||'<div class="empty">尚無治療師</div>';
-  var ret=calcRetention();
+  var cs=careStats();
+  var careCounts={};ATTN_BUCKETS.forEach(function(b){careCounts[b.id]=0;});
+  cs.list.forEach(function(r){if(r.bucket)careCounts[r.bucket]++;});
+  var careNeed=cs.list.filter(function(r){return r.bucket;}).length;
+  var careRows=ATTN_BUCKETS.map(function(b){return '<div class="status-row" style="cursor:pointer" onclick="setCareFilter(\''+b.id+'\')"><b style="font-weight:600"><span class="cal-dot" style="background:'+b.color+';display:inline-block;margin-right:7px;vertical-align:middle"></span>'+b.label+'</b><span class="tag" style="background:'+b.light+';color:'+b.color+'">'+careCounts[b.id]+' 位</span></div>';}).join('');
   var avg=PAYMENTS.length?Math.round(rev/PAYMENTS.length):0;
   return shell('dashboard','總覽',
     '<div class="stat-grid">'+
@@ -782,10 +754,12 @@ views.dashboard=function(){
     '<div class="stat-card"><div class="sc-n">'+future.length+'</div><div class="sc-l">未來待診</div></div></div>'+
     '<div class="grid2">'+
     '<div class="card"><div class="card-head"><h3>治療師人次</h3></div><div class="card-body">'+tRows+'</div></div>'+
-    '<div class="card"><div class="card-head"><h3>重點指標</h3></div><div class="card-body">'+
-    '<div class="status-row"><b>90天回流率</b><span class="tag mint">'+ret.rate+'%</span></div>'+
+    '<div class="card"><div class="card-head"><h3>重點指標</h3><span class="tag '+(careCounts.m1>0?'amber':'mint')+'">需關心 '+careNeed+' 位</span></div><div class="card-body">'+
+    '<div class="status-row"><b>回流率</b><span class="tag mint">'+cs.rate+'%</span></div>'+
     '<div class="status-row"><b>平均客單價</b><span class="tag mint">'+fmtNT(avg)+'</span></div>'+
     '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(Math.floor(stampBase*0.004))+'</span></div>'+
+    '<div class="sec-label" style="margin:14px 0 4px">需要關心的名單（依上次就診間隔，點擊查看）</div>'+
+    careRows+
     '</div></div></div>'+backupCard()+resetServerCard());
 };
 /* ============ 重置伺服器資料（換版用，需密碼 dogma）============ */
@@ -973,90 +947,36 @@ function ensureGCal(cb){
 }
 function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.calendarId||'primary');}
-// 張博源(Sky)的預約 → skyzbpt；其餘 → SYNC_CALENDAR_ID(nycuptc)
+// 取得某預約應同步的行事曆 ID（優先用治療師個人行事曆，否則用診所預設）
 function calIdForBooking(b){
   var t=b&&b.t?THERAPISTS.find(function(x){return x.id===b.t;}):null;
-  return (t&&t.calendarId)||(b&&b.t&&THERAPIST_CALENDAR[b.t])||SYNC_CALENDAR_ID||CLINIC_INFO.calendarId||'primary';
-}
-// 一筆預約要同步到哪些行事曆：SYNC_CALENDAR_ID(nycuptc) 一律收全部；列在 THERAPIST_CALENDAR 的治療師再額外寫進自己那本
-function calIdsForBooking(b){
-  var t=b&&b.t?THERAPISTS.find(function(x){return x.id===b.t;}):null;
-  var primary=(t&&t.calendarId)||SYNC_CALENDAR_ID||'primary';
-  var ids=[primary];
-  var ex=b&&b.t&&THERAPIST_CALENDAR[b.t];
-  if(ex&&ids.indexOf(ex)<0)ids.push(ex);
-  return ids;
-}
-// 舊資料相容：把單一 gcalEventId 歸位到它原本所在的那本行事曆，避免重新同步時產生重複事件
-function gcalMigrate(b){
-  if(b.gcalEventId&&(!b.gcalEvents||!Object.keys(b.gcalEvents).length)){
-    b.gcalEvents=b.gcalEvents||{};
-    b.gcalEvents[calIdForBooking(b)]=b.gcalEventId;
-  }
-}
-function gcalEventBody(b){
-  var sv=svcOf(b.svc);var startStr=b.date+'T'+fmtTimeMin(b.start)+':00+08:00';var endStr=b.date+'T'+fmtTimeMin(b.start+sv.dur)+':00+08:00';
-  return {summary:b.name+'\uFF5C'+sv.name,description:'\u6cbb\u7642\u5e2b\uFF1A'+tName(b.t)+'\n\u96fb\u8a71\uFF1A'+b.phone+(b.note?'\n\u5099\u8a3b\uFF1A'+b.note:''),start:{dateTime:startStr,timeZone:'Asia/Taipei'},end:{dateTime:endStr,timeZone:'Asia/Taipei'}};
-}
-function gcalUpsertOne(b,calRaw){
-  if(!b.gcalEvents)b.gcalEvents={};
-  var body=gcalEventBody(b);var cid=calId(calRaw);var evId=b.gcalEvents[calRaw];
-  var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(evId){url+='/'+evId;method='PATCH';}
-  return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){
-    if(r.ok&&r.data&&r.data.id){b.gcalEvents[calRaw]=r.data.id;if(calRaw===SYNC_CALENDAR_ID)b.gcalEventId=r.data.id;return true;}
-    if(r.status===404&&evId){delete b.gcalEvents[calRaw];return gcalUpsertOne(b,calRaw);}
-    throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));
-  });
+  if(t&&t.calendarId)return t.calendarId;
+  return CLINIC_INFO.calendarId||'primary';
 }
 function gcalUpsert(b){
-  gcalMigrate(b);
-  var cals=calIdsForBooking(b);
-  return Promise.all(cals.map(function(c){return gcalUpsertOne(b,c).then(function(){return {c:c,ok:true};},function(e){return {c:c,ok:false,e:e};});})).then(function(rs){
-    var fails=rs.filter(function(x){return !x.ok;});
-    if(fails.length){throw new Error(fails.map(function(x){return x.c+'\uFF08'+((x.e&&x.e.message)||'\u5931\u6557')+'\uFF09';}).join('\u3001'));}
-    return true;
-  });
+  var sv=svcOf(b.svc);var startStr=b.date+'T'+fmtTimeMin(b.start)+':00+08:00';var endStr=b.date+'T'+fmtTimeMin(b.start+sv.dur)+':00+08:00';
+  var body={summary:b.name+'｜'+sv.name,description:'治療師：'+tName(b.t)+'\n電話：'+b.phone+(b.note?'\n備註：'+b.note:''),start:{dateTime:startStr,timeZone:'Asia/Taipei'},end:{dateTime:endStr,timeZone:'Asia/Taipei'}};
+  var cid=calId(calIdForBooking(b));
+  var url='https://www.googleapis.com/calendar/v3/calendars/'+cid+'/events';var method='POST';if(b.gcalEventId){url+='/'+b.gcalEventId;method='PATCH';}
+  return fetch(url,{method:method,headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(res){return res.json().then(function(data){return {ok:res.ok,status:res.status,data:data};});}).then(function(r){if(r.ok&&r.data&&r.data.id){b.gcalEventId=r.data.id;return true;}if(r.status===404&&b.gcalEventId){b.gcalEventId=null;return gcalUpsert(b);}throw new Error((r.data&&r.data.error&&r.data.error.message)||('HTTP '+r.status));});
 }
-function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){saveAll();showToast('\u5df2\u540c\u6b65\u81f3 Google \u884c\u4e8b\u66c6 \u2713');}).catch(function(e){saveAll();var m=String(e.message||'');if(/not found|forbidden|insufficient|403|404/i.test(m)){showToast('\u540c\u6b65\u5931\u6557\uFF1A\u76ee\u524d\u767b\u5165\u5e33\u865f\u7121\u6b0a\u5beb\u5165\u8a72\u884c\u4e8b\u66c6\uFF0C\u8acb\u5c07\u5b83\u4ee5\u300c\u8b8a\u66f4\u6d3b\u52d5\u300d\u6b0a\u9650\u5206\u4eab\u7d66\u6b64\u5e33\u865f\uFF08'+m+'\uFF09');}else{showToast('\u540c\u6b65\u5931\u6557\uFF1A'+m);}});});}
-// 刪除一筆預約在「所有」已同步行事曆上的事件（含舊資料相容）
-function gcalDeleteBooking(b,cb){
-  if(!b){if(cb)cb();return;}
-  var jobs=[];var map=b.gcalEvents||{};
-  Object.keys(map).forEach(function(c){if(map[c])jobs.push({c:c,ev:map[c]});});
-  if(b.gcalEventId){calIdsForBooking(b).forEach(function(c){if(!map[c])jobs.push({c:c,ev:b.gcalEventId});});}
-  if(!jobs.length){if(cb)cb();return;}
-  ensureGCal(function(){
-    Promise.all(jobs.map(function(j){return fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(j.c)+'/events/'+j.ev,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(){return true;},function(){return false;});})).then(function(){b.gcalEvents={};b.gcalEventId=null;showToast('\u5df2\u5f9e Google \u884c\u4e8b\u66c6\u79fb\u9664 \u2713');if(cb)cb();});
-  });
-}
+function syncOne(id){var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;ensureGCal(function(){gcalUpsert(b).then(function(){showToast('已同步至 Google 行事曆 ✓');}).catch(function(e){showToast('同步失敗：'+e.message);});});}
+function gcalDelete(eventId,cb,cidRaw){if(!eventId){if(cb)cb();return;}ensureGCal(function(){fetch('https://www.googleapis.com/calendar/v3/calendars/'+calId(cidRaw)+'/events/'+eventId,{method:'DELETE',headers:{'Authorization':'Bearer '+gcalToken}}).then(function(res){if(res.ok||res.status===404||res.status===410){showToast('已從 Google 行事曆移除 ✓');}if(cb)cb();}).catch(function(e){showToast('行事曆連線失敗：'+e.message);if(cb)cb();});});}
 /* listGCalendars / testGCalConnection 已移除（行事曆選擇與測試 UI 已撤除）。預約仍自動同步至 CLINIC_INFO.calendarId。 */
 function pullSubmissions(silent){
   if(!RENDER_URL){if(!silent)showToast('請先設定 RENDER_URL');return;}
   if(!silent)showToast('讀取線上送出中…');
-  return fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
+  fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     var bks=(data&&data.bookings)||[];var ins=(data&&data.intakes)||[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
-    var ackIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0,newImported=[];
+    var ackIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0;
     ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;newIntake++;});
-    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}var _nb={id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'};BOOKINGS.push(_nb);newImported.push(_nb);var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
+    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}BOOKINGS.push({id:++BOOKING_ID,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
       showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')+(skipBk?'（'+skipBk+' 筆因時段衝突未匯入）':''));
       if(_curView==='bookings')renderCal();else if(_curView==='patients'||_curView==='dashboard')go(_curView);
-      // 將新匯入的線上預約同步至對應治療師的 Google 行事曆（依 email 分流）
-      if(newImported.length){
-        var _syncImported=function(){
-          var ok=0,fail=0;
-          Promise.all(newImported.map(function(nb){return gcalUpsert(nb).then(function(){ok++;}).catch(function(){fail++;});})).then(function(){
-            saveAll();
-            if(ok)showToast('已同步 '+ok+' 筆線上預約至 Google 行事曆 ✓'+(fail?'（'+fail+' 筆失敗）':''));
-            else if(fail)showToast(fail+' 筆線上預約同步失敗，請稍後再試');
-          });
-        };
-        if(silent){ if(gcalToken&&Date.now()<gcalTokenExp)_syncImported(); }
-        else ensureGCal(_syncImported);
-      }
     }else if(skipBk){showToast(skipBk+' 筆預約因時段衝突未匯入，請至預約管理手動調整');
     }else if(!silent){showToast('沒有可匯入的資料');}
     if(ackIds.length){fetch(RENDER_URL+'/ack-submissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ackIds})}).catch(function(){});}
@@ -1106,17 +1026,21 @@ function slotConflict(tid,date,startMin,svcId,excludeId){
 }
 
 /* ============ 預約管理 ============ */
-var calWeek=null;var calFilter={};var calFilterOpen=false;
-function toggleCalFilter(){calFilterOpen=!calFilterOpen;var el=document.getElementById('calPills');if(el)el.style.display=calFilterOpen?'flex':'none';var b=document.getElementById('calFilterBtn');if(b)b.classList.toggle('active',calFilterOpen);}
+var calWeek=null;var calFilter={};
 var _pendingStatus={};
 function startOfWeek(d){var r=new Date(d);var day=r.getDay();r.setDate(r.getDate()-(day===0?6:day-1));r.setHours(0,0,0,0);return r;}
 function dstr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function calToday(){calWeek=startOfWeek(new Date());renderCal();}
 function calNav(dir){if(!calWeek)calWeek=startOfWeek(new Date());calWeek.setDate(calWeek.getDate()+dir*7);renderCal();}
-function setCalFilter(tid){if(tid==='all')calFilter={};else calFilter[tid]=!calFilter[tid];var el=document.getElementById('calPills');if(el)el.innerHTML=calPills();var dot=document.getElementById('calFilterDot');if(dot)dot.style.display=anyFilter()?'inline-block':'none';renderCal();}
-function calActive(tid){if(!canManageTherapist(tid))return false;return Object.keys(calFilter).filter(function(k){return calFilter[k];}).length===0||calFilter[tid];}
+function _myTherapistId(){return (currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;}
+function setCalFilter(tid){if(_myTherapistId())return;if(tid==='all')calFilter={};else calFilter[tid]=!calFilter[tid];var el=document.getElementById('calPills');if(el)el.innerHTML=calPills();renderCal();}
+function calActive(tid){var myT=_myTherapistId();if(myT)return tid===myT;return Object.keys(calFilter).filter(function(k){return calFilter[k];}).length===0||calFilter[tid];}
 function anyFilter(){return Object.keys(calFilter).some(function(k){return calFilter[k];});}
-function calPills(){var h='<button class="cal-pill'+(!anyFilter()?' active':'')+'" onclick="setCalFilter(\'all\')">全部</button>';THERAPISTS.filter(function(t){return canManageTherapist(t.id);}).forEach(function(t){var sel=!!calFilter[t.id];h+='<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(t.id)+';border-color:'+tColor(t.id)+';color:#fff;':'')+'" onclick="setCalFilter(\''+t.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(t.id))+'"></span>'+t.name+'</button>';});return h;}
+function calPills(){
+  var myT=_myTherapistId();
+  if(myT){var mt=THERAPISTS.find(function(x){return x.id===myT;});var nm=mt?mt.name:myT;return '<span class="cal-pill active" style="background:'+tColor(myT)+';border-color:'+tColor(myT)+';color:#fff;cursor:default" title="治療師僅能檢視自己的預約"><span class="cal-dot" style="background:rgba(255,255,255,.7)"></span>'+esc(nm)+'（僅本人）</span>';}
+  var h='<button class="cal-pill'+(!anyFilter()?' active':'')+'" onclick="setCalFilter(\'all\')">全部</button>';THERAPISTS.forEach(function(t){var sel=!!calFilter[t.id];h+='<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(t.id)+';border-color:'+tColor(t.id)+';color:#fff;':'')+'" onclick="setCalFilter(\''+t.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(t.id))+'"></span>'+t.name+'</button>';});return h;
+}
 function renderCal(){
   var mount=document.getElementById('calMount');if(!mount)return;
   if(!calWeek)calWeek=startOfWeek(new Date());
@@ -1152,13 +1076,12 @@ function renderCal(){
   mount.innerHTML=h;
 }
 views.bookings=function(){
-  var _showFilter=BK_ADMIN_EMAILS.indexOf(((currentUser&&currentUser.email)||'').toLowerCase())>=0;
   return shell('bookings','預約管理','<div id="calMount"></div>',
-    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button>'+(_showFilter?'<button id="calFilterBtn" class="btn gray sm" onclick="toggleCalFilter()" title="篩選治療師"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> 篩選<span id="calFilterDot" style="display:'+(anyFilter()?'inline-block':'none')+';width:6px;height:6px;border-radius:50%;background:var(--mint-d);margin-left:5px;vertical-align:middle"></span></button><div class="row" id="calPills" style="gap:5px;display:none;flex-wrap:wrap">'+calPills()+'</div>':'')+''+syncToolBtnHTML()+'<button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
+    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button><div class="row" id="calPills" style="gap:5px">'+calPills()+'</div><button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
 };
 function addBkModal(){
-  var _tl=BK_ADMIN_EMAILS.indexOf(((currentUser&&currentUser.email)||'').toLowerCase())>=0?THERAPISTS:THERAPISTS.filter(function(t){return t.id===((currentUser&&currentUser.therapistId)||'');});
-  var tOpts=_tl.map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
+  var myT=_myTherapistId();
+  var tOpts=(myT?THERAPISTS.filter(function(t){return t.id===myT;}):THERAPISTS).map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
   var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'">'+s.name+' ('+s.dur+'分)</option>';}).join('');
   if(!SERVICES.length){showToast('請先到「服務與課程」建立服務項目');return;}
   modal('<div class="modal-head" style="background:var(--navy)">新增預約<button class="x" onclick="closeModal()">&times;</button></div>'+
@@ -1178,7 +1101,7 @@ function copyBkModal(id){
   if(!SERVICES.length){showToast('請先到「服務與課程」建立服務項目');return;}
   var hh=Math.floor(b.start/60),mm=b.start%60;var timeVal=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
   var nextDate=b.date;try{var d=new Date(b.date+'T00:00:00');d.setDate(d.getDate()+7);nextDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){}
-  var tOpts=(BK_ADMIN_EMAILS.indexOf(((currentUser&&currentUser.email)||'').toLowerCase())>=0?THERAPISTS:THERAPISTS.filter(function(t){return t.id===((currentUser&&currentUser.therapistId)||'');})).map(function(t){return '<option value="'+t.id+'"'+(t.id===b.t?' selected':'')+'>'+t.name+'</option>';}).join('');
+  var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'"'+(t.id===b.t?' selected':'')+'>'+t.name+'</option>';}).join('');
   var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'"'+(s.id===b.svc?' selected':'')+'>'+s.name+' ('+s.dur+'分)</option>';}).join('');
   modal('<div class="modal-head" style="background:'+tColor(b.t)+'">複製預約<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body">'+
@@ -1194,7 +1117,6 @@ function submitCopyBk(){
   var name=document.getElementById('cb-name').value.trim();var phone=document.getElementById('cb-phone').value.trim();var date=document.getElementById('cb-date').value;var tv=document.getElementById('cb-time').value;
   if(!name||!phone||!date||!tv){showToast('請填寫完整資料');return;}
   var tid=document.getElementById('cb-t').value;
-  if(!canManageTherapist(tid)){showToast('您只能建立自己的預約');return;}
   if(isLeaveDay(tid,date)){showToast(tName(tid)+' 於 '+date+' 為休假日，無法預約');return;}
   var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var svcId=document.getElementById('cb-svc').value;var endMin=startMin+svcOf(svcId).dur;
   if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間（含療程時長）');return;}
@@ -1212,7 +1134,6 @@ function submitBk(){
   var name=document.getElementById('nb-name').value.trim();var phone=document.getElementById('nb-phone').value.trim();var date=document.getElementById('nb-date').value;var tv=document.getElementById('nb-time').value;
   if(!name||!phone||!date||!tv){showToast('請填寫完整資料');return;}
   var tid=document.getElementById('nb-t').value;
-  if(!canManageTherapist(tid)){showToast('您只能建立自己的預約');return;}
   if(isLeaveDay(tid,date)){showToast(tName(tid)+' 於 '+date+' 為休假日，無法預約');return;}
   var hm=tv.split(':');var startMin=Number(hm[0])*60+Number(hm[1]);var svcId=document.getElementById('nb-svc').value;var endMin=startMin+svcOf(svcId).dur;
   if(startMin<480||endMin>1320){showToast('預約時間需在 08:00–22:00 之間（含療程時長）');return;}
@@ -1229,7 +1150,6 @@ function submitBk(){
 function bkDetail(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
   delete _pendingStatus[id];
-  var ed=canEditBk(b);var roAttr=ed?'':' disabled';
   var c=tColor(b.t),cur=b.status||'confirmed';var hh=Math.floor(b.start/60),mm=b.start%60;
   var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'"'+(t.id===b.t?' selected':'')+'>'+t.name+'</option>';}).join('');
   var sOpts=SERVICES.map(function(s){return '<option value="'+s.id+'"'+(s.id===b.svc?' selected':'')+'>'+s.name+' ('+s.dur+'分)</option>';}).join('');
@@ -1237,23 +1157,20 @@ function bkDetail(id){
   modal('<div class="modal-head" style="background:'+c+'"><div><div style="font-weight:700">'+esc(b.name)+'</div><div style="font-size:11px;opacity:.85">'+b.date+' '+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+' '+esc(svcOf(b.svc).name)+'</div></div><button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="edit-tabs"><button class="edit-tab active" onclick="bkTab(this,\'info\')">資訊</button><button class="edit-tab" onclick="bkTab(this,\'status\')">狀態</button></div>'+
     '<div class="edit-panel active" id="bkp-info">'+
-    (ed?'':'<div style="margin-bottom:10px;padding:9px 12px;background:#eaf2f8;border:1px solid #cfe0ec;border-radius:8px;font-size:12px;color:#1a4d68">檢視模式：此預約屬於其他治療師，僅本人或櫃檯可更改。</div>')+
-    '<div class="grid2"><div class="field"><label>姓名</label><input id="eb-name" value="'+esc(b.name)+'"'+roAttr+'></div><div class="field"><label>電話</label><input id="eb-phone" value="'+esc(b.phone)+'"'+roAttr+'></div></div>'+
-    '<div class="grid2"><div class="field"><label>治療師</label><select id="eb-t"'+roAttr+'>'+tOpts+'</select></div><div class="field"><label>服務</label><select id="eb-svc"'+roAttr+'>'+sOpts+'</select></div></div>'+
-    '<div class="grid2"><div class="field"><label>日期</label><input id="eb-date" type="date" value="'+b.date+'"'+roAttr+'></div><div class="field"><label>時間</label><input id="eb-time" type="time" value="'+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+'" min="08:00" max="22:00" step="900"'+roAttr+'></div></div>'+
-    '<div class="field"><label>備註</label><textarea id="eb-note" style="height:60px;resize:vertical"'+roAttr+'>'+esc(b.note)+'</textarea></div></div>'+
+    '<div class="grid2"><div class="field"><label>姓名</label><input id="eb-name" value="'+esc(b.name)+'"></div><div class="field"><label>電話</label><input id="eb-phone" value="'+esc(b.phone)+'"></div></div>'+
+    '<div class="grid2"><div class="field"><label>治療師</label><select id="eb-t">'+tOpts+'</select></div><div class="field"><label>服務</label><select id="eb-svc">'+sOpts+'</select></div></div>'+
+    '<div class="grid2"><div class="field"><label>日期</label><input id="eb-date" type="date" value="'+b.date+'"></div><div class="field"><label>時間</label><input id="eb-time" type="time" value="'+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+'" min="08:00" max="22:00" step="900"></div></div>'+
+    '<div class="field"><label>備註</label><textarea id="eb-note" style="height:60px;resize:vertical">'+esc(b.note)+'</textarea></div></div>'+
     '<div class="edit-panel" id="bkp-status"><div class="sec-label">預約狀態</div><div class="status-picker" id="bkSp">'+sp+'</div></div>'+
-    (ed?'<div class="modal-foot" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn danger sm" onclick="delBk('+id+')">刪除</button><button class="btn gray sm" onclick="copyBkModal('+id+')">複製</button><button class="btn ghost sm" onclick="checkoutModal('+id+')">結帳</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="lineNotifyModal('+id+')">LINE 通知</button></div><button class="btn" onclick="saveBk('+id+')">儲存</button></div>':'<div class="modal-foot" style="justify-content:flex-end"><button class="btn gray" onclick="closeModal()">關閉</button></div>'));
+    '<div class="modal-foot" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn danger sm" onclick="delBk('+id+')">刪除</button><button class="btn gray sm" onclick="copyBkModal('+id+')">複製</button><button class="btn ghost sm" onclick="checkoutModal('+id+')">結帳</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="lineNotifyModal('+id+')">LINE 通知</button></div><button class="btn" onclick="saveBk('+id+')">儲存</button></div>');
 }
 function bkTab(btn,name){btn.parentNode.querySelectorAll('.edit-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');['info','status'].forEach(function(n){document.getElementById('bkp-'+n).classList.toggle('active',n===name);});}
 function pickBkStatus(id,s){
-  var _b=BOOKINGS.find(function(x){return x.id===id;});if(_b&&!canEditBk(_b)){showToast('您只能更改自己的預約');return;}
   document.querySelectorAll('#bkSp .sp').forEach(function(b){var sel=b.dataset.s===s;b.classList.toggle('sel',sel);b.style.background=sel?ST[b.dataset.s].bg:'';b.style.borderColor=sel?ST[b.dataset.s].bg:'';});
   _pendingStatus[id]=s;
 }
 function saveBk(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
-  if(!canEditBk(b)){showToast('您只能更改自己的預約');return;}
   var newT=document.getElementById('eb-t').value;var newDate=document.getElementById('eb-date').value||b.date;var newSvc=document.getElementById('eb-svc').value;var tv=document.getElementById('eb-time').value;var newStart=b.start;if(tv){var hm=tv.split(':');newStart=Number(hm[0])*60+Number(hm[1]);}
   if(isLeaveDay(newT,newDate)){showToast(tName(newT)+' 於 '+newDate+' 為休假日');return;}
   var dur=svcOf(newSvc).dur;var endMin=newStart+dur;
@@ -1267,14 +1184,14 @@ function saveBk(id){
   delete _pendingStatus[id];
   closeModal();renderCal();
   if(statusChanged&&newStatus==='cancelled'&&prev!=='cancelled'){
-    gcalDeleteBooking(b);saveAll();
+    if(b.gcalEventId){var evt=b.gcalEventId;b.gcalEventId=null;gcalDelete(evt,null,calIdForBooking(b));}
     var p=getPatient(b.phone);if(p&&p.lineId){sendLineMsg(p.lineId,lineTemplates(b).cancel);showToast('已儲存並通知取消');}else{showToast('已儲存（已取消，病患未綁定 LINE）');}
   }else{
     showToast('已儲存');syncOne(id);
   }
 }
 function delBk(id){modal('<div class="modal-head" style="background:var(--danger)">刪除預約<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此預約？</div></div><div class="modal-foot"><button class="btn gray" onclick="bkDetail('+id+')">取消</button><button class="btn danger" onclick="confirmDelBk('+id+')">確定刪除</button></div>');}
-function confirmDelBk(id){var b=BOOKINGS.find(function(x){return x.id===id;});closeModal();if(b&&!canEditBk(b)){showToast('您只能刪除自己的預約');return;}var done=function(){var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);saveAll();renderCal();};var has=b&&((b.gcalEvents&&Object.keys(b.gcalEvents).length)||b.gcalEventId);if(has){gcalDeleteBooking(b,done);}else{done();showToast('已刪除');}}
+function confirmDelBk(id){var b=BOOKINGS.find(function(x){return x.id===id;});var evtId=b&&b.gcalEventId;var bcid=b?calIdForBooking(b):'';closeModal();if(evtId){gcalDelete(evtId,function(){var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);renderCal();},bcid);}else{var i=BOOKINGS.findIndex(function(x){return x.id===id;});if(i>-1)BOOKINGS.splice(i,1);renderCal();showToast('已刪除');}}
 
 /* ============ 結帳 / 收據（含內部減免）============ */
 var _coPay='cash';var _coPkg=null;var _coSvcPrice=0;var _coDiscount=0;
@@ -1356,6 +1273,21 @@ function doCheckout(id){
 }
 function editShockwavePkgModal(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">編輯震波套票<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="banner info"><span>i</span><div>震波套票以「發數」計算，結帳時於「震波區塊」獨立扣除，<b>不適用任何課程或服務項目</b>。</div></div><div class="field"><label>套票名稱</label><input id="swe-name" value="'+esc(p.name)+'"></div><div class="grid2"><div class="field"><label>總發數</label><input id="swe-shots" type="number" min="0" step="100" value="'+(p.shots||0)+'"></div><div class="field"><label>售價 (NT$)</label><input id="swe-price" type="number" min="0" value="'+p.price+'"></div></div><div class="field"><label>說明</label><input id="swe-desc" value="'+esc(p.desc||'')+'"></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="delPkg('+id+')">刪除</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="saveShockwavePkg('+id+')">儲存</button></div></div>');}
 function saveShockwavePkg(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;p.name=document.getElementById('swe-name').value.trim()||p.name;p.shots=Math.max(0,Math.floor(Number(document.getElementById('swe-shots').value)||0));p.price=Math.max(0,Number(document.getElementById('swe-price').value)||0);p.desc=document.getElementById('swe-desc').value||'';closeModal();go('packages');showToast('震波套票已儲存');}
+// 震波使用紀錄：由結帳產生的扣發 PAYMENTS（shockwave:true）即時推算，作廢扣發會自動從紀錄移除
+function shockwaveUsageModal(ph,pid){
+  var p=getPkgs(ph).find(function(x){return x.id===pid;});if(!p)return;
+  var pt=getPatient(ph);
+  var total=p.totalShots||0;var used=p.usedShots||0;var left=Math.max(0,total-used);
+  var uses=PAYMENTS.filter(function(r){return r.shockwave&&r.swPkgId===pid;}).sort(function(a,b){return (a.paidAt||'').localeCompare(b.paidAt||'');});
+  var loggedSum=uses.reduce(function(a,r){return a+(r.shotsUsed||0);},0);
+  var running=total;
+  var rows=uses.length?uses.map(function(r){running-=(r.shotsUsed||0);return '<tr><td><div>'+esc(r.date||'-')+'</div>'+(r.paidAt?'<div class="t-sub">'+esc(r.paidAt)+'</div>':'')+'</td><td>'+esc(tName(r.t))+'</td><td class="num" style="color:var(--danger);font-weight:700">-'+(r.shotsUsed||0).toLocaleString()+'</td><td class="num" style="font-weight:700">'+Math.max(0,running).toLocaleString()+'</td></tr>';}).join(''):'<tr><td colspan="4" class="empty">尚無使用紀錄，於結帳扣除發數後會自動記錄</td></tr>';
+  var diffNote=(uses.length&&loggedSum!==used)?'<div class="banner info" style="margin-top:12px"><span>i</span><div>目前已用發數（'+used.toLocaleString()+'）與下方扣發紀錄合計（'+loggedSum.toLocaleString()+'）不一致，差額可能來自手動調整發數；上方剩餘發數為實際依據。</div></div>':'';
+  modal('<div class="modal-head" style="background:var(--navy)">震波使用紀錄<button class="x" onclick="reopenPtPay(\''+ph+'\')">&times;</button></div>'+
+    '<div class="modal-body"><div style="background:#fffbf0;border:1px solid #f0c060;border-radius:10px;padding:12px 14px;margin-bottom:14px"><div style="font-weight:700;font-size:14px">'+esc(p.name)+'</div>'+(pt?'<div class="t-sub">'+esc(pt.name)+'</div>':'')+'<div class="row" style="gap:14px;margin-top:8px;flex-wrap:wrap"><span style="font-size:12px;color:var(--slate)">總發數 <b style="color:var(--ink)">'+total.toLocaleString()+'</b></span><span style="font-size:12px;color:var(--slate)">已用 <b style="color:var(--ink)">'+used.toLocaleString()+'</b></span><span style="font-size:12px;color:var(--slate)">剩餘 <b style="color:'+(left>0?'var(--mint-d)':'var(--danger)')+'">'+left.toLocaleString()+'</b></span></div></div>'+
+    '<div class="sec-label">扣發明細（共 '+uses.length+' 筆）</div><table><thead><tr><th>治療日期</th><th>治療師</th><th>本次扣發</th><th>剩餘</th></tr></thead><tbody>'+rows+'</tbody></table>'+diffNote+'</div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="reopenPtPay(\''+ph+'\')">返回</button></div>');
+}
 function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" style="width:76px;height:76px;object-fit:contain">';return '<svg width="90" height="60" viewBox="0 0 120 80" style="opacity:.85"><ellipse cx="60" cy="40" rx="56" ry="36" fill="none" stroke="#022e4d" stroke-width="3"/><ellipse cx="60" cy="40" rx="50" ry="30" fill="none" stroke="#022e4d" stroke-width="1"/><text x="60" y="48" text-anchor="middle" fill="#022e4d" font-size="22" font-weight="900" letter-spacing="2">收據章</text></svg>';}
 function stampOwner(){if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:84px;height:48px;object-fit:contain">';return '<svg width="84" height="48" viewBox="0 0 84 48" style="opacity:.85"><rect x="3" y="3" width="78" height="42" rx="3" fill="none" stroke="#ff3131" stroke-width="2.5"/><text x="42" y="30" text-anchor="middle" fill="#ff3131" font-size="18" font-weight="900" letter-spacing="3">印花章</text></svg>';}
 function buildNameSeal(nm,w,h){var n=nm.length;var fs=Math.max(12,Math.min(24,Math.floor((w-16)/(Math.max(n,1)*1.02))));var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.36)+'" text-anchor="middle" fill="#ff3131" font-size="'+fs+'" font-weight="900" letter-spacing="2" font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0"><rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="3" fill="#fff" stroke="#ff3131" stroke-width="2.5"/>'+tx+'</svg>';}
@@ -1421,7 +1353,7 @@ views.patients=function(){
     return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+key+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+key+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+esc(p.name)+'\',\''+key+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+key+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+key+'\')">編輯</button></td></tr>';
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
-  return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div>'+syncToolBtnHTML()+'<button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
+  return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
 };
 function filterPt(q){q=(q||'').toLowerCase();document.querySelectorAll('#ptBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 var _ptGender='';
@@ -1484,18 +1416,16 @@ function viewIntake(ph){
     +(hasHist?sec('健康史')+block('已知病史',d.medicalHistory)+block('受傷經驗',d.injuryHistory)+block('手術經驗',d.surgeryHistory)+block('運動習慣',d.exerciseHabit):'');
   modal('<div class="modal-head" style="background:var(--navy)">初診問卷 - '+esc(d.name||'')+'<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body">'+html+'</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button></div>');
 }
-function tagModal(ph){var p=getPatient(ph);if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">'+esc(p.name)+' - 標籤<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div id="tagList"></div><div style="height:1px;background:var(--line);margin:14px 0"></div><div class="sec-label">新增標籤</div><div class="row" style="gap:8px"><input id="ntName" placeholder="標籤名稱" style="flex:1;padding:9px;border:1.5px solid var(--mist);border-radius:8px;outline:none"><input id="ntColor" type="color" value="#3b82f6" style="width:40px;height:36px;border:1.5px solid var(--mist);border-radius:8px"><button class="btn sm" onclick="addTag(\''+ph+'\')">新增</button></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="clearAllTags(\''+ph+'\')">清除全部標籤</button><button class="btn" onclick="closeModal();go(\'patients\')">完成</button></div>');renderTagList(ph);}
-function renderTagList(ph){var tags=getTags(ph);var el=document.getElementById('tagList');if(!el)return;if(!ALL_PT_TAGS.length){el.innerHTML='<div class="empty" style="padding:14px">\u5c1a\u7121\u6a19\u7c64\uff0c\u65bc\u4e0b\u65b9\u65b0\u589e\u3002</div>';return;}el.innerHTML=ALL_PT_TAGS.map(function(t,ti){var on=tags.indexOf(t.id)>-1;var up=ti>0?'<button class="btn sm ghost" style="padding:0 6px" onclick="moveTag('+ti+',-1,\''+ph+'\')" title="\u4e0a\u79fb">\u2191</button>':'<button class="btn sm ghost" style="padding:0 6px;opacity:.25" disabled>\u2191</button>';var dn=ti<ALL_PT_TAGS.length-1?'<button class="btn sm ghost" style="padding:0 6px" onclick="moveTag('+ti+',1,\''+ph+'\')" title="\u4e0b\u79fb">\u2193</button>':'<button class="btn sm ghost" style="padding:0 6px;opacity:.25" disabled>\u2193</button>';return '<div class="row" style="gap:6px;padding:6px 0;border-bottom:1px solid var(--line)"><div style="display:flex;flex-direction:column">'+up+dn+'</div><button onclick="toggleTag(\''+ph+'\',\''+t.id+'\')" style="width:24px;height:24px;border:1.5px solid '+t.color+';border-radius:6px;background:'+(on?t.color:'#fff')+';color:#fff;cursor:pointer;flex-shrink:0">'+(on?'&check;':'')+'</button><input type="color" value="'+t.color+'" onchange="editTagColor(\''+t.id+'\',this.value,\''+ph+'\')" style="width:30px;height:30px;border:1.5px solid var(--mist);border-radius:6px;padding:0;flex-shrink:0;cursor:pointer"><input value="'+esc(t.name)+'" oninput="editTagName(\''+t.id+'\',this.value)" style="flex:1;font-weight:600;border:1.5px solid var(--mist);border-radius:7px;padding:7px 9px;outline:none"><button class="shift-del" onclick="delTag(\''+t.id+'\',\''+ph+'\')" style="flex-shrink:0">&times;</button></div>';}).join('');}
+function tagModal(ph){var p=getPatient(ph);if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">'+esc(p.name)+' - 標籤<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div id="tagList"></div><div style="height:1px;background:var(--line);margin:14px 0"></div><div class="sec-label">新增標籤</div><div class="row" style="gap:8px"><input id="ntName" placeholder="標籤名稱" style="flex:1;padding:9px;border:1.5px solid var(--mist);border-radius:8px;outline:none"><input id="ntColor" type="color" value="#3b82f6" style="width:40px;height:36px;border:1.5px solid var(--mist);border-radius:8px"><button class="btn sm" onclick="addTag(\''+ph+'\')">新增</button></div></div><div class="modal-foot"><button class="btn" onclick="closeModal();go(\'patients\')">完成</button></div>');renderTagList(ph);}
+function renderTagList(ph){var tags=getTags(ph);document.getElementById('tagList').innerHTML=ALL_PT_TAGS.map(function(t){var on=tags.indexOf(t.id)>-1;return '<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><button onclick="toggleTag(\''+ph+'\',\''+t.id+'\')" style="width:24px;height:24px;border:1.5px solid '+t.color+';border-radius:6px;background:'+(on?t.color:'#fff')+';color:#fff;cursor:pointer;flex-shrink:0">'+(on?'&check;':'')+'</button><input type="color" value="'+t.color+'" onchange="editTagColor(\''+t.id+'\',this.value,\''+ph+'\')" style="width:30px;height:30px;border:1.5px solid var(--mist);border-radius:6px;padding:0;flex-shrink:0;cursor:pointer"><input value="'+esc(t.name)+'" oninput="editTagName(\''+t.id+'\',this.value)" style="flex:1;font-weight:600;border:1.5px solid var(--mist);border-radius:7px;padding:7px 9px;outline:none"><button class="shift-del" onclick="delTag(\''+t.id+'\',\''+ph+'\')" style="flex-shrink:0">&times;</button></div>';}).join('');}
 function editTagName(id,val){var t=PT_TAG_MAP[id];if(t)t.name=val;var a=ALL_PT_TAGS.find(function(x){return x.id===id;});if(a)a.name=val;}
-function editTagColor(id,val,ph){var t=PT_TAG_MAP[id];if(t)t.color=val;var a=ALL_PT_TAGS.find(function(x){return x.id===id;});if(a)a.color=val;saveAll();renderTagList(ph);}
-function toggleTag(ph,tid){var tags=getTags(ph);var i=tags.indexOf(tid);if(i>-1)tags.splice(i,1);else tags.push(tid);saveAll();renderTagList(ph);}
-function addTag(ph){var n=document.getElementById('ntName').value.trim();if(!n)return;var c=document.getElementById('ntColor').value;var id='c'+Date.now();ALL_PT_TAGS.push({id:id,name:n,color:c});PT_TAG_MAP[id]={id:id,name:n,color:c};getTags(ph).push(id);document.getElementById('ntName').value='';saveAll();renderTagList(ph);}
-function delTag(tid,ph){var i=ALL_PT_TAGS.findIndex(function(t){return t.id===tid;});if(i>-1)ALL_PT_TAGS.splice(i,1);delete PT_TAG_MAP[tid];Object.keys(PT_TAG_DATA).forEach(function(k){var a=PT_TAG_DATA[k];var j=a.indexOf(tid);if(j>-1)a.splice(j,1);});saveAll();renderTagList(ph);}
-function moveTag(i,dir,ph){var j=i+dir;if(j<0||j>=ALL_PT_TAGS.length)return;var tmp=ALL_PT_TAGS[i];ALL_PT_TAGS[i]=ALL_PT_TAGS[j];ALL_PT_TAGS[j]=tmp;saveAll();renderTagList(ph);}
-function clearAllTags(ph){if(!confirm('\u78ba\u5b9a\u522a\u9664\u5168\u90e8\u6a19\u7c64\uff1f\u6240\u6709\u75c5\u60a3\u8eab\u4e0a\u7684\u6a19\u7c64\u4e5f\u6703\u4e00\u4f75\u79fb\u9664\u3002'))return;ALL_PT_TAGS.length=0;Object.keys(PT_TAG_MAP).forEach(function(k){delete PT_TAG_MAP[k];});Object.keys(PT_TAG_DATA).forEach(function(k){if(PT_TAG_DATA[k])PT_TAG_DATA[k].length=0;});saveAll();renderTagList(ph);showToast('\u5df2\u522a\u9664\u5168\u90e8\u6a19\u7c64');}
+function editTagColor(id,val,ph){var t=PT_TAG_MAP[id];if(t)t.color=val;var a=ALL_PT_TAGS.find(function(x){return x.id===id;});if(a)a.color=val;renderTagList(ph);}
+function toggleTag(ph,tid){var tags=getTags(ph);var i=tags.indexOf(tid);if(i>-1)tags.splice(i,1);else tags.push(tid);renderTagList(ph);}
+function addTag(ph){var n=document.getElementById('ntName').value.trim();if(!n)return;var c=document.getElementById('ntColor').value;var id='c'+Date.now();ALL_PT_TAGS.push({id:id,name:n,color:c});PT_TAG_MAP[id]={id:id,name:n,color:c};getTags(ph).push(id);document.getElementById('ntName').value='';renderTagList(ph);}
+function delTag(tid,ph){var i=ALL_PT_TAGS.findIndex(function(t){return t.id===tid;});if(i>-1)ALL_PT_TAGS.splice(i,1);delete PT_TAG_MAP[tid];Object.keys(PT_TAG_DATA).forEach(function(k){var a=PT_TAG_DATA[k];var j=a.indexOf(tid);if(j>-1)a.splice(j,1);});renderTagList(ph);}
 /* 病患課程 */
 function pkgPanelHTML(ph){var list=getPkgs(ph);var rows=list.length?list.map(function(p){
-  if(p.shockwave){var leftShots=(p.totalShots||0)-(p.usedShots||0);return '<div style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="row" style="justify-content:space-between;gap:8px"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:13px">⚡ '+esc(p.name)+'</div><div class="t-sub">震波套票（不適用課程／服務）</div></div><span class="tag '+(leftShots>0?'mint':'gray')+'" style="flex-shrink:0">剩 '+leftShots.toLocaleString()+' / '+(p.totalShots||0).toLocaleString()+' 發</span></div><div class="row" style="gap:6px;margin-top:8px"><button class="btn sm ghost" onclick="editPkgSessionsModal(\''+ph+'\','+p.id+')">編輯發數</button><button class="btn sm danger" onclick="delPtPkgModal(\''+ph+'\','+p.id+')">刪除套票</button></div></div>';}
+  if(p.shockwave){var leftShots=(p.totalShots||0)-(p.usedShots||0);var swUses=PAYMENTS.filter(function(r){return r.shockwave&&r.swPkgId===p.id;}).length;return '<div style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="row" style="justify-content:space-between;gap:8px"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:13px">'+esc(p.name)+'</div><div class="t-sub">震波套票（不適用課程／服務）</div></div><span class="tag '+(leftShots>0?'mint':'gray')+'" style="flex-shrink:0">剩 '+leftShots.toLocaleString()+' / '+(p.totalShots||0).toLocaleString()+' 發</span></div><div class="row" style="gap:6px;margin-top:8px"><button class="btn sm ghost" onclick="shockwaveUsageModal(\''+ph+'\','+p.id+')">使用紀錄'+(swUses?'（'+swUses+'）':'')+'</button><button class="btn sm ghost" onclick="editPkgSessionsModal(\''+ph+'\','+p.id+')">編輯發數</button><button class="btn sm danger" onclick="delPtPkgModal(\''+ph+'\','+p.id+')">刪除套票</button></div></div>';}
   var left=p.total-p.used;var svcLabel=(p.svcs&&p.svcs.length)?p.svcs.map(function(id){return svcOf(id).name;}).join('、'):svcOf(p.svc).name;return '<div style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="row" style="justify-content:space-between;gap:8px"><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:13px">'+esc(p.name)+'</div><div class="t-sub">'+esc(svcLabel)+'　每堂認列 '+fmtNT(p.unitPrice)+'</div></div><span class="tag '+(left>0?'mint':'gray')+'" style="flex-shrink:0">剩 '+left+' / '+p.total+' 堂</span></div><div class="row" style="gap:6px;margin-top:8px"><button class="btn sm ghost" onclick="editPkgSessionsModal(\''+ph+'\','+p.id+')">編輯堂數</button><button class="btn sm danger" onclick="delPtPkgModal(\''+ph+'\','+p.id+')">刪除課程</button></div></div>';}).join(''):'<div class="empty" style="padding:18px">尚無購買課程／套票</div>';return '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div class="sec-label" style="margin:0">課程與套票</div><button class="btn sm" onclick="buyPkgModal(\''+ph+'\')">購買課程／套票</button></div>'+rows;}
 function buyPkgModal(ph){var p=getPatient(ph);if(!p)return;if(!PACKAGES.length){showToast('請先到「服務與課程」建立課程方案');return;}var opts=PACKAGES.map(function(k){if(k.shockwave)return '<option value="'+k.id+'">'+esc(k.name)+'（震波 '+(k.shots||0).toLocaleString()+' 發 / '+fmtNT(k.price)+'）</option>';return '<option value="'+k.id+'">'+esc(k.name)+'（'+pkgSvcLabel(k)+' '+k.sessions+'堂 / '+fmtNT(k.price)+'）</option>';}).join('');modal('<div class="modal-head" style="background:var(--navy)">購買課程／套票 - '+esc(p.name)+'<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>選擇方案</label><select id="bp-pkg">'+opts+'</select></div><div class="banner info"><span>i</span><div>一般課程採每次認列一堂；震波套票以「發數」計算，結帳時於「震波區塊」獨立扣除發數，<b>不適用任何課程或服務項目</b>。購買當下不計營收，使用時才認列金額。</div></div></div><div class="modal-foot"><button class="btn gray" onclick="ptDetail(\''+ph+'\')">返回</button><button class="btn" onclick="confirmBuyPkg(\''+ph+'\')">確認購買</button></div>');}
 function confirmBuyPkg(ph){var p=getPatient(ph);if(!p)return;var k=PACKAGES.find(function(x){return String(x.id)===String(document.getElementById('bp-pkg').value);});if(!k){showToast('請選擇方案');return;}if(k.shockwave){var shots=k.shots||0;getPkgs(ph).push({id:++PT_PKG_ID,pkgId:k.id,name:k.name,shockwave:true,totalShots:shots,usedShots:0,unitPrice:shots?(k.price/shots):0,purchasedAt:todayStr()});saveAll();showToast('已購買「'+k.name+'」'+shots.toLocaleString()+' 發');reopenPtPay(ph);return;}getPkgs(ph).push({id:++PT_PKG_ID,pkgId:k.id,name:k.name,svcs:pkgSvcs(k).slice(),anySvc:!!k.anySvc,total:k.sessions,used:0,unitPrice:k.sessions?Math.round(k.price/k.sessions):0,purchasedAt:todayStr()});saveAll();showToast('已購買「'+k.name+'」'+k.sessions+' 堂');reopenPtPay(ph);}
@@ -1504,7 +1434,7 @@ function editPkgSessionsModal(ph,pid){
   var p=getPkgs(ph).find(function(x){return x.id===pid;});if(!p)return;
   if(p.shockwave){
     modal('<div class="modal-head" style="background:var(--navy)">編輯震波發數<button class="x" onclick="reopenPtPay(\''+ph+'\')">&times;</button></div>'+
-      '<div class="modal-body"><div style="background:#fffbf0;border:1px solid #f0c060;border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px"><b>⚡ '+esc(p.name)+'</b></div>'+
+      '<div class="modal-body"><div style="background:#fffbf0;border:1px solid #f0c060;border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px"><b>'+esc(p.name)+'</b></div>'+
       '<div class="grid2"><div class="field"><label>總發數</label><input id="ep-total" type="number" min="1" step="100" value="'+(p.totalShots||0)+'"></div><div class="field"><label>已用發數</label><input id="ep-used" type="number" min="0" step="100" value="'+(p.usedShots||0)+'"></div></div>'+
       '<div class="banner info"><span>i</span><div>調整發數不會更動已產生的消費記錄。剩餘發數＝總發數－已用發數。震波套票於結帳「震波區塊」獨立扣除，不適用任何課程或服務項目。</div></div></div>'+
       '<div class="modal-foot"><button class="btn gray" onclick="reopenPtPay(\''+ph+'\')">取消</button><button class="btn" onclick="saveEditPkgSessions(\''+ph+'\','+pid+')">儲存</button></div>');
@@ -1572,14 +1502,16 @@ function setSoapFolder(tid){soapFolderT=(soapFolderT===tid?null:tid);go('soap');
 function filterSoap(q){soapQuery=(q||'').toLowerCase();go('soap');var el=document.getElementById('soapq');if(el){el.focus();el.value=q;try{el.setSelectionRange(q.length,q.length);}catch(e){}}}
 views.soap=function(){
   var q=soapQuery;
-  var notes=SOAP_NOTES.filter(function(n){if(!q)return true;return (n.name||'').toLowerCase().indexOf(q)>-1||(n.phone||'').toLowerCase().indexOf(q)>-1;});
+  var myT=(currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;
+  var base=myT?SOAP_NOTES.filter(function(n){return n.t===myT;}):SOAP_NOTES;
+  var notes=base.filter(function(n){if(!q)return true;return (n.name||'').toLowerCase().indexOf(q)>-1||(n.phone||'').toLowerCase().indexOf(q)>-1;});
   var body;
-  if(!SOAP_NOTES.length){body='<div class="empty">尚無病歷，點右上角「新增病歷」建立。</div>';}
+  if(!base.length){body='<div class="empty">'+(myT?'您目前尚無個案病歷，點右上角「新增病歷」建立。':'尚無病歷，點右上角「新增病歷」建立。')+'</div>';}
   else{
-    body=THERAPISTS.map(function(t){
+    body=(myT?'<div class="banner info"><span>i</span><div>您看到的是自己負責個案的病歷，其他治療師的個案不會顯示。</div></div>':'')+(myT?THERAPISTS.filter(function(t){return t.id===myT;}):THERAPISTS).map(function(t){
       var tNotes=notes.filter(function(n){return n.t===t.id;});
       var ptSet={};tNotes.forEach(function(n){ptSet[n.phone||n.name]=1;});var ptCount=Object.keys(ptSet).length;
-      var open=soapFolderT===t.id||!!q;var c=tColor(t.id);
+      var open=soapFolderT===t.id||!!q||!!myT;var c=tColor(t.id);
       var head='<div class="day-card" style="margin-bottom:10px;padding:0;overflow:hidden"><div onclick="setSoapFolder(\''+t.id+'\')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;cursor:pointer;background:'+c+'10;border-left:4px solid '+c+'"><div class="row" style="gap:10px"><span class="chev" style="'+(open?'':'transform:rotate(-90deg)')+'"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="'+c+'" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></span><svg width="18" height="18" viewBox="0 0 24 24" fill="'+c+'18" stroke="'+c+'" stroke-width="1.6"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><div><div style="font-weight:700;color:'+c+'">'+esc(t.name)+'</div><div style="font-size:11px;color:var(--slate)">'+ptCount+' 位個案 · '+tNotes.length+' 份病歷</div></div></div></div>';
       if(!open||!tNotes.length){if(open&&!tNotes.length)return head+'<div style="padding:14px 18px;color:var(--slate);font-size:12px">'+(q?'查無符合的個案':'此治療師尚無病歷')+'</div></div>';return head+'</div>';}
       var byPt={};tNotes.forEach(function(n){var k=n.phone||n.name;(byPt[k]=byPt[k]||[]).push(n);});
@@ -1595,13 +1527,14 @@ function delSoap(id){modal('<div class="modal-head" style="background:var(--dang
 function confirmDelSoap(id){var i=SOAP_NOTES.findIndex(function(x){return x.id===id;});if(i>-1)SOAP_NOTES.splice(i,1);delete soapCollapsed[id];closeModal();go('soap');showToast('已刪除');}
 function addSoapModal(){
   if(!PATIENTS.length){showToast('請先在病患管理新增病患');return;}
+  var myT=(currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;
   var pOpts=PATIENTS.map(function(p){return '<option value="'+esc(p.phone||p.pid)+'">'+esc(p.name)+(p.phone?' ('+esc(p.phone)+')':'')+'</option>';}).join('');
-  var tOpts=THERAPISTS.map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
-  modal('<div class="modal-head" style="background:var(--navy)">新增 SOAP 病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>個案</label><div class="search-wrap" style="width:100%"><input id="ns-search" placeholder="輸入姓名或電話快速篩選" oninput="filterSoapPt(this.value)" style="width:100%"></div></div><div class="field"><label>選擇個案</label><select id="ns-pt">'+pOpts+'</select></div><div class="field"><label>治療師</label><select id="ns-t">'+tOpts+'</select></div><div class="field"><label>就診日期</label><input id="ns-date" type="date" max="'+todayStr()+'" value="'+todayStr()+'"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSoap()">建立</button></div>');
-  if(soapFolderT){var tsel=document.getElementById('ns-t');if(tsel)tsel.value=soapFolderT;}
+  var tOpts=(myT?THERAPISTS.filter(function(t){return t.id===myT;}):THERAPISTS).map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
+  modal('<div class="modal-head" style="background:var(--navy)">新增 SOAP 病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>個案</label><div class="search-wrap" style="width:100%"><input id="ns-search" placeholder="輸入姓名或電話快速篩選" oninput="filterSoapPt(this.value)" style="width:100%"></div></div><div class="field"><label>選擇個案</label><select id="ns-pt">'+pOpts+'</select></div><div class="field"><label>治療師</label><select id="ns-t"'+(myT?' disabled style="background:var(--navy-l)"':'')+'>'+tOpts+'</select></div><div class="field"><label>就診日期</label><input id="ns-date" type="date" max="'+todayStr()+'" value="'+todayStr()+'"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSoap()">建立</button></div>');
+  if(!myT&&soapFolderT){var tsel=document.getElementById('ns-t');if(tsel)tsel.value=soapFolderT;}
 }
 function filterSoapPt(q){q=(q||'').toLowerCase();var sel=document.getElementById('ns-pt');if(!sel)return;var matches=PATIENTS.filter(function(p){return !q||(p.name||'').toLowerCase().indexOf(q)>-1||(p.phone||'').toLowerCase().indexOf(q)>-1;});sel.innerHTML=matches.map(function(p){return '<option value="'+esc(p.phone||p.pid)+'">'+esc(p.name)+(p.phone?' ('+esc(p.phone)+')':'')+'</option>';}).join('')||'<option value="">查無符合個案</option>';}
-function submitSoap(){var ph=document.getElementById('ns-pt').value;var p=getPatient(ph);var id=++SOAP_ID;SOAP_NOTES.unshift({id:id,name:p?p.name:ph,phone:ph,t:document.getElementById('ns-t').value,date:document.getElementById('ns-date').value||todayStr(),S:'',O:'',A:'',P:'',bodyParts:[],rom:[]});closeModal();go('soap');showToast('已新增病歷');}
+function submitSoap(){var ph=document.getElementById('ns-pt').value;var p=getPatient(ph);var myT=(currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;var tid=myT||document.getElementById('ns-t').value;var id=++SOAP_ID;SOAP_NOTES.unshift({id:id,name:p?p.name:ph,phone:ph,t:tid,date:document.getElementById('ns-date').value||todayStr(),S:'',O:'',A:'',P:'',bodyParts:[],rom:[]});closeModal();go('soap');showToast('已新增病歷');}
 
 /* ============ 營運分析（月/季/年比較 + 治療師）============ */
 var _anaMode='month',_anaT='__all__',_anaOffset=0,_topT=null;
@@ -1697,36 +1630,62 @@ views.stamptax=function(){
   return shell('stamptax','印花稅','<div class="stat-grid"><div class="stat-card"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">應納印花稅</div></div><div class="stat-card"><div class="sc-n">'+taxable.length+'</div><div class="sc-l">應稅筆數</div></div></div><div class="card"><div class="card-body flush"><table><thead><tr><th>個案</th><th>日期</th><th>服務</th><th>金額</th><th>稅額</th></tr></thead><tbody>'+rows+'</tbody></table>'+(taxable.length?'':'<div class="empty">尚無應稅資料</div>')+'</div></div><div class="banner info"><span>i</span><div>稅額以實際收款金額 0.4% 計（匯款不計），資料來源為消費記錄。</div></div>');
 };
 
-/* ============ 客戶回流 ============ */
-var _careThreshold=60;
-function careList(days){
-  var byPhone={};
-  BOOKINGS.filter(function(b){return b.status==='completed';}).forEach(function(b){(byPhone[b.phone]=byPhone[b.phone]||[]).push(b.date);});
-  var today=new Date(todayStr());var list=[];
-  Object.keys(byPhone).forEach(function(ph){
-    var dates=byPhone[ph].slice().sort();var last=dates[dates.length-1];
-    var diff=Math.floor((today-new Date(last))/86400000);
-    if(diff>=days){var p=getPatient(ph)||{};list.push({ph:ph,name:p.name||'(未命名)',phone:p.phone||ph,lineId:p.lineId||'',last:last,days:diff,count:dates.length});}
+/* ============ 客戶回流 / 需要關心的名單 ============ */
+var ATTN_BUCKETS=[
+  {id:'d1',label:'1-2 天',short:'1-2天',color:'#3b82f6',light:'#eff6ff',desc:'近期剛來過'},
+  {id:'d3',label:'3-6 天',short:'3-6天',color:'#2DC8A0',light:'#edfaf6',desc:'一週內'},
+  {id:'d7',label:'7 天以上',short:'7天以上',color:'#e0992a',light:'#fdf3e0',desc:'超過一週未回診'},
+  {id:'m1',label:'1 個月以上',short:'1個月以上',color:'#e05c5c',light:'#fef2f2',desc:'超過一個月，建議主動關心'}
+];
+function attnBucketOf(days){return days>=30?'m1':days>=7?'d7':days>=3?'d3':days>=1?'d1':null;}
+function careStats(){
+  var map={};
+  BOOKINGS.filter(function(b){return b.status==='completed';}).forEach(function(b){
+    var k=b.phone;if(!k)return;
+    if(!map[k])map[k]={phone:k,name:b.name||'',count:0,last:'',t:''};
+    map[k].count++;
+    if(b.date>map[k].last){map[k].last=b.date;map[k].t=b.t;}
+    if(!map[k].name&&b.name)map[k].name=b.name;
   });
-  list.sort(function(a,b){return b.days-a.days;});
-  return list;
+  var today=new Date();today.setHours(0,0,0,0);
+  var list=Object.keys(map).map(function(k){
+    var r=map[k];var pt=getPatient(k);if(pt&&pt.name)r.name=pt.name;r.lineId=pt?pt.lineId:'';
+    var pa=(r.last||'').split('-');var d=pa.length===3?new Date(+pa[0],+pa[1]-1,+pa[2]):today;
+    r.days=Math.round((today-d)/86400000);r.bucket=attnBucketOf(r.days);
+    return r;
+  });
+  var total=list.length;var returning=list.filter(function(r){return r.count>1;}).length;
+  return {list:list,rate:total?Math.round(returning/total*100):0,total:total};
 }
-function setCareThreshold(d){_careThreshold=d;go('retention');}
-function sendCareMsg(ph){var p=getPatient(ph);if(!p){showToast('查無病患');return;}if(!p.lineId){showToast('此病患尚未綁定 LINE，請改用電話聯絡');return;}var msg='【領航物理治療所】\n親愛的'+(p.name||'')+'您好 😊\n距離您上次回診已有一段時間，我們很關心您的近況與身體狀況。\n如有任何不適，或想安排回診調整，都歡迎直接回覆訊息，或來電 (02)2826-1698，我們很樂意為您服務 🙏';sendLineMsg(p.lineId,msg);}
+var _careFilter='all';
+function setCareFilter(f){_careFilter=f;go('retention');}
+function careLineModal(ph){
+  var p=getPatient(ph);if(!p){showToast('找不到病患');return;}
+  if(!p.lineId){showToast('此病患尚未綁定 LINE');return;}
+  var msg='【領航物理治療所】\n'+(p.name||'')+' 您好 😊\n好一段時間沒見到您了，最近身體狀況還好嗎？\n如果有任何不適或想回來調整，隨時歡迎預約，也可來電 (02)2826-1698。\n祝您平安順心 🙏';
+  modal('<div class="modal-head" style="background:#06C755">LINE 關心訊息<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div style="background:#f0fff8;border:1px solid #b2f0d8;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px"><b style="color:#06C755">📱 '+esc(p.name||'')+'</b></div>'+
+    '<div class="field"><label>訊息內容</label><textarea id="careMsg" style="height:150px;resize:vertical;line-height:1.8">'+esc(msg)+'</textarea></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" style="background:#06C755" onclick="submitCareLine(\''+esc(ph)+'\')">送出關心訊息</button></div>');
+}
+function submitCareLine(ph){var p=getPatient(ph);if(!p||!p.lineId)return;var m=(document.getElementById('careMsg').value||'').trim();if(!m){showToast('請輸入訊息');return;}sendLineMsg(p.lineId,m,function(){closeModal();});}
+function careRow(r){
+  var b=ATTN_BUCKETS.find(function(x){return x.id===r.bucket;})||{color:'#6b8a9c',light:'#eef3f6'};
+  var lineBtn=r.lineId?'<button class="btn sm" style="background:#06C755;color:#fff" onclick="careLineModal(\''+esc(r.phone)+'\')">LINE 關心</button>':'<span class="tag gray">未綁 LINE</span>';
+  return '<tr><td><div class="t-name">'+esc(r.name||'(未命名)')+'</div><div class="t-sub">'+(r.phone?esc(r.phone):'—')+'</div></td><td>'+esc(r.last||'-')+'</td><td><span class="tag" style="background:'+b.light+';color:'+b.color+'">'+r.days+' 天</span></td><td>'+esc(tName(r.t))+'</td><td class="row" style="gap:5px">'+lineBtn+'<button class="btn sm ghost" onclick="ptDetail(\''+esc(r.phone)+'\')">資料</button></td></tr>';
+}
 views.retention=function(){
-  var ret=calcRetention();var days=_careThreshold;var list=careList(days);
-  var _seen={};BOOKINGS.filter(function(b){return b.status==='completed';}).forEach(function(b){_seen[b.phone]=1;});
-  var allVisited=Object.keys(_seen).length;var needCare=list.length;var active=Math.max(0,allVisited-needCare);
-  var pill=function(d){return '<button class="cal-pill'+(_careThreshold===d?' active':'')+'" onclick="setCareThreshold('+d+')">'+d+' 天以上</button>';};
-  var rows=list.map(function(r){
-    var urg=r.days>=90?'<span class="tag" style="background:#fdecec;color:#e05c5c">'+r.days+' 天</span>':(r.days>=60?'<span class="tag amber">'+r.days+' 天</span>':'<span class="tag gray">'+r.days+' 天</span>');
-    var act=r.lineId?'<button class="btn sm" style="background:#06C755;color:#fff" onclick="sendCareMsg(\''+esc(r.ph)+'\')">LINE 關心</button>':(r.phone?'<a class="btn sm gray" href="tel:'+esc(r.phone)+'">'+esc(r.phone)+'</a>':'<span class="t-sub">無聯絡方式</span>');
-    return '<tr><td><div class="t-name">'+esc(r.name)+'</div><div class="t-sub">'+(r.lineId?'LINE 已綁定':esc(r.phone||'未留電話'))+'</div></td><td>'+r.last+'</td><td>'+urg+'</td><td>'+r.count+' 次</td><td>'+act+'</td></tr>';
-  }).join('');
-  var table=list.length?('<table><thead><tr><th>姓名</th><th>上次回診</th><th>距今</th><th>累計</th><th>聯絡關心</th></tr></thead><tbody>'+rows+'</tbody></table>'):'<div class="empty" style="padding:30px">目前沒有超過 '+days+' 天未回診的個案 🎉</div>';
+  var cs=careStats();
+  var counts={};ATTN_BUCKETS.forEach(function(b){counts[b.id]=0;});
+  cs.list.forEach(function(r){if(r.bucket)counts[r.bucket]++;});
+  var cards=ATTN_BUCKETS.map(function(b){var on=_careFilter===b.id;return '<div class="stat-card" onclick="setCareFilter(\''+(on?'all':b.id)+'\')" style="cursor:pointer;border-color:'+(on?b.color:'var(--line)')+';background:'+(on?b.light:'#fff')+'"><div class="sc-n" style="color:'+b.color+'">'+counts[b.id]+'</div><div class="sc-l">'+b.label+'<br><span style="font-size:10px">'+b.desc+'</span></div></div>';}).join('');
+  var rows=cs.list.filter(function(r){return r.bucket&&(_careFilter==='all'||r.bucket===_careFilter);}).sort(function(a,b){return b.days-a.days;});
+  var pills='<button class="pay-pill'+(_careFilter==='all'?' sel':'')+'" onclick="setCareFilter(\'all\')">全部需關心</button>'+ATTN_BUCKETS.map(function(b){var on=_careFilter===b.id;return '<button class="pay-pill'+(on?' sel':'')+'" style="'+(on?'background:'+b.color+';border-color:'+b.color+';color:#fff;':'')+'" onclick="setCareFilter(\''+b.id+'\')">'+b.short+'（'+counts[b.id]+'）</button>';}).join('');
+  var table=rows.length?('<table><thead><tr><th>病患</th><th>上次就診</th><th>已隔</th><th>治療師</th><th>關心動作</th></tr></thead><tbody>'+rows.map(careRow).join('')+'</tbody></table>'):'<div class="empty">'+(_careFilter==='all'?'目前沒有需要特別關心的個案 👍':'此區間沒有個案')+'</div>';
   return shell('retention','客戶回流',
-    '<div class="stat-grid"><div class="stat-card"><div class="sc-n">'+ret.rate+'%</div><div class="sc-l">回流率（回診≥2次）</div></div><div class="stat-card"><div class="sc-n mint">'+active+'</div><div class="sc-l">近 '+days+' 天有回診</div></div><div class="stat-card"><div class="sc-n" style="color:#e05c5c">'+needCare+'</div><div class="sc-l">超過 '+days+' 天未回診</div></div></div>'+
-    '<div class="card"><div class="card-head"><h3>需要關心的名單</h3><span class="t-sub">距上次回診越久排越前面</span></div><div class="card-body"><div class="row" style="gap:6px;margin-bottom:14px;flex-wrap:wrap">'+pill(30)+pill(60)+pill(90)+'</div>'+table+'</div></div>');
+    '<div class="stat-grid">'+cards+'</div>'+
+    '<div class="card"><div class="card-head"><h3>需要關心的名單</h3><div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag mint">回流率 '+cs.rate+'%</span>'+pills+'</div></div><div class="card-body flush">'+table+'</div></div>'+
+    '<div class="banner info"><span>i</span><div>依「距離上次完成療程的天數」分組：1-2 天、3-6 天、7 天以上、1 個月以上（每位個案僅歸入最符合的一組）。點上方卡片或標籤可快速篩選，並可直接推播 LINE 關心訊息。回流率為完成 2 次以上療程的病患佔比。</div></div>');
 };
 
 /* ============ 衛教內容 ============ */
@@ -1753,20 +1712,20 @@ var DOW_N=['日','一','二','三','四','五','六'];
 var DOW_O=[1,2,3,4,5,6,0];
 function ensureWeek(t){if(!t.week)t.week={};return t.week;}
 function ensureLeaves(t){if(!t.leaves)t.leaves=[];return t.leaves;}
-function setSchedT(tid){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}schedT=tid;go('schedule');}
-function addShift(tid,day){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}var t=THERAPISTS.find(function(x){return x.id===tid;});ensureWeek(t);if(!t.week[day])t.week[day]=[];syncShifts(tid);t.week[day].push({name:'時段'+(t.week[day].length+1),start:'09:00',end:'13:00'});go('schedule');}
-function rmShift(tid,day,i){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}var t=THERAPISTS.find(function(x){return x.id===tid;});syncShifts(tid);t.week[day].splice(i,1);if(!t.week[day].length)delete t.week[day];go('schedule');}
-function toggleOff(tid,day){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}var t=THERAPISTS.find(function(x){return x.id===tid;});ensureWeek(t);syncShifts(tid);if(t.week[day]&&t.week[day].length)delete t.week[day];else t.week[day]=[{name:'早班',start:'09:00',end:'13:00'}];go('schedule');}
+function setSchedT(tid){schedT=tid;go('schedule');}
+function addShift(tid,day){var t=THERAPISTS.find(function(x){return x.id===tid;});ensureWeek(t);if(!t.week[day])t.week[day]=[];syncShifts(tid);t.week[day].push({name:'時段'+(t.week[day].length+1),start:'09:00',end:'13:00'});go('schedule');}
+function rmShift(tid,day,i){var t=THERAPISTS.find(function(x){return x.id===tid;});syncShifts(tid);t.week[day].splice(i,1);if(!t.week[day].length)delete t.week[day];go('schedule');}
+function toggleOff(tid,day){var t=THERAPISTS.find(function(x){return x.id===tid;});ensureWeek(t);syncShifts(tid);if(t.week[day]&&t.week[day].length)delete t.week[day];else t.week[day]=[{name:'早班',start:'09:00',end:'13:00'}];go('schedule');}
 function syncShifts(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t||!t.week)return;DOW_O.forEach(function(day){var sh=t.week[day];if(!sh)return;sh.forEach(function(s,i){var nm=document.getElementById('ws-'+day+'-'+i+'-n');var st=document.getElementById('ws-'+day+'-'+i+'-s');var en=document.getElementById('ws-'+day+'-'+i+'-e');if(nm&&nm.value)s.name=nm.value.trim();if(st)s.start=st.value;if(en)s.end=en.value;});});}
-function saveSched(tid){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}var t=THERAPISTS.find(function(x){return x.id===tid;});syncShifts(tid);t.workDays=Object.keys(t.week).map(Number).filter(function(d){return t.week[d]&&t.week[d].length;});go('schedule');showToast(t.name+' 排班已儲存');}
-function addLeave(tid){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}syncShifts(tid);var t=THERAPISTS.find(function(x){return x.id===tid;});ensureLeaves(t);var date=document.getElementById('lv-date').value;var reason=document.getElementById('lv-reason').value.trim();var allDayCb=document.getElementById('lv-allday');var allDay=!allDayCb||allDayCb.checked;var startTime=!allDay?(document.getElementById('lv-start').value||'09:00'):'';var endTime=!allDay?(document.getElementById('lv-end').value||'18:00'):'';if(!date){showToast('請選擇休假日期');return;}if(!allDay&&startTime>=endTime){showToast('結束時間必須晚於開始時間');return;}if(allDay&&t.leaves.some(function(l){return l.date===date&&(l.allDay===undefined||l.allDay===true);})){showToast('該日期已有全天休假');return;}t.leaves.push({date:date,allDay:allDay,startTime:startTime,endTime:endTime,reason:reason});t.leaves.sort(function(a,b){return a.date.localeCompare(b.date)||((a.startTime||'').localeCompare(b.startTime||''));});go('schedule');showToast('已新增'+(allDay?'全天':'時段')+'休假');}
-function rmLeave(tid,idx){if(!canManageTherapist(tid)){showToast('您只能設定自己的排班');return;}syncShifts(tid);var t=THERAPISTS.find(function(x){return x.id===tid;});ensureLeaves(t);if(idx>=0&&idx<t.leaves.length)t.leaves.splice(idx,1);go('schedule');showToast('已移除休假');}
+function saveSched(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});syncShifts(tid);t.workDays=Object.keys(t.week).map(Number).filter(function(d){return t.week[d]&&t.week[d].length;});go('schedule');showToast(t.name+' 排班已儲存');}
+function addLeave(tid){syncShifts(tid);var t=THERAPISTS.find(function(x){return x.id===tid;});ensureLeaves(t);var date=document.getElementById('lv-date').value;var reason=document.getElementById('lv-reason').value.trim();var allDayCb=document.getElementById('lv-allday');var allDay=!allDayCb||allDayCb.checked;var startTime=!allDay?(document.getElementById('lv-start').value||'09:00'):'';var endTime=!allDay?(document.getElementById('lv-end').value||'18:00'):'';if(!date){showToast('請選擇休假日期');return;}if(!allDay&&startTime>=endTime){showToast('結束時間必須晚於開始時間');return;}if(allDay&&t.leaves.some(function(l){return l.date===date&&(l.allDay===undefined||l.allDay===true);})){showToast('該日期已有全天休假');return;}t.leaves.push({date:date,allDay:allDay,startTime:startTime,endTime:endTime,reason:reason});t.leaves.sort(function(a,b){return a.date.localeCompare(b.date)||((a.startTime||'').localeCompare(b.startTime||''));});go('schedule');showToast('已新增'+(allDay?'全天':'時段')+'休假');}
+function rmLeave(tid,idx){syncShifts(tid);var t=THERAPISTS.find(function(x){return x.id===tid;});ensureLeaves(t);if(idx>=0&&idx<t.leaves.length)t.leaves.splice(idx,1);go('schedule');showToast('已移除休假');}
 function toggleLeaveTime(cb){var show=!cb.checked;['lv-start','lv-dash','lv-end'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display=show?'':'none';});}
 function leaveRows(t){ensureLeaves(t);if(!t.leaves.length)return '<div class="empty">尚無特別休假日</div>';return t.leaves.map(function(l,i){var d=new Date(l.date+'T00:00:00');var w=DOW_N[d.getDay()];var isAllDay=l.allDay===undefined||l.allDay===true;var timeStr=isAllDay?'全天':((l.startTime||'--')+'–'+(l.endTime||'--'));return '<div class="row" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><div class="row" style="gap:10px"><span class="day-badge" style="background:'+(isAllDay?'var(--danger)':'var(--warn)')+'">'+(isAllDay?'假':'段')+'</span><div><div style="font-weight:700">'+l.date+' （週'+w+'）<span class="tag '+(isAllDay?'amber':'mint')+'" style="margin-left:6px;font-size:10px">'+esc(timeStr)+'</span></div>'+(l.reason?'<div style="font-size:11px;color:var(--slate)">'+esc(l.reason)+'</div>':'')+'</div></div><button class="shift-del" onclick="rmLeave(\''+t.id+'\','+i+')">&times;</button></div>';}).join('');}
 views.schedule=function(){
-  if(!canManageTherapist(schedT)){schedT=(currentUser&&currentUser.therapistId)||schedT;}
+  var myT=_myTherapistId();if(myT)schedT=myT;
   var t=THERAPISTS.find(function(x){return x.id===schedT;})||THERAPISTS[0];if(!t)return shell('schedule','排班設定','<div class="empty">尚無治療師</div>');ensureWeek(t);ensureLeaves(t);
-  var pills=THERAPISTS.filter(function(th){return canManageTherapist(th.id);}).map(function(th){var sel=th.id===schedT;return '<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(th.id)+';border-color:'+tColor(th.id)+';color:#fff;':'')+'" onclick="setSchedT(\''+th.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(th.id))+'"></span>'+th.name+'</button>';}).join('');
+  var pills=myT?('<span class="cal-pill active" style="background:'+tColor(myT)+';border-color:'+tColor(myT)+';color:#fff;cursor:default" title="治療師僅能編輯自己的排班"><span class="cal-dot" style="background:rgba(255,255,255,.7)"></span>'+esc(t.name)+'（僅本人）</span>'):THERAPISTS.map(function(th){var sel=th.id===schedT;return '<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(th.id)+';border-color:'+tColor(th.id)+';color:#fff;':'')+'" onclick="setSchedT(\''+th.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(th.id))+'"></span>'+th.name+'</button>';}).join('');
   var cards=DOW_O.map(function(day){var sh=t.week[day]||[];var off=!sh.length;var c=tColor(t.id);var rows=sh.map(function(s,i){return '<div class="shift-row"><input id="ws-'+day+'-'+i+'-n" class="shift-name" value="'+esc(s.name)+'" style="border-left:3px solid '+c+'"><input id="ws-'+day+'-'+i+'-s" type="time" class="shift-time" value="'+s.start+'"><span style="color:var(--slate)">-</span><input id="ws-'+day+'-'+i+'-e" type="time" class="shift-time" value="'+s.end+'"><button class="shift-del" onclick="rmShift(\''+t.id+'\','+day+','+i+')">&times;</button></div>';}).join('');return '<div class="day-card'+(off?' off':'')+'"><div class="day-head"><div class="day-title"><span class="day-badge" style="background:'+(off?'var(--mist)':c)+'">'+DOW_N[day]+'</span>週'+DOW_N[day]+'</div><div class="row" style="gap:6px">'+(off?'<button class="btn sm ghost" onclick="toggleOff(\''+t.id+'\','+day+')">設為上班</button>':'<button class="btn sm ghost" onclick="addShift(\''+t.id+'\','+day+')">+ 時段</button><button class="btn sm gray" onclick="toggleOff(\''+t.id+'\','+day+')">休診</button>')+'</div></div>'+(off?'<div style="color:var(--slate);font-size:13px">休診</div>':rows)+'</div>';}).join('');
   var workN=DOW_O.filter(function(d){return (t.week[d]||[]).length;}).length;
   return shell('schedule','排班設定','<div class="card"><div class="card-head"><h3><span class="cal-dot" style="background:'+tColor(t.id)+';display:inline-block;margin-right:6px"></span>'+t.name+' 每週班表</h3><div class="row" style="gap:8px"><span class="tag mint">每週 '+workN+' 天</span><button class="btn sm" onclick="saveSched(\''+t.id+'\')">儲存排班</button></div></div><div class="card-body">'+cards+'</div></div>'+
@@ -1778,7 +1737,7 @@ views.schedule=function(){
 views.packages=function(){
   var sRows=SERVICES.map(function(s){var tsLabel=(s.ts&&s.ts.length)?s.ts.map(function(id){return tName(id);}).join('、'):'全部治療師';return '<tr><td class="t-name">'+esc(s.name)+'</td><td>'+s.dur+' 分</td><td class="num">'+fmtNT(s.price)+'</td><td class="t-sub">'+esc(tsLabel)+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="editSvcModal(\''+s.id+'\')">編輯</button><button class="btn sm danger" onclick="delSvc(\''+s.id+'\')">刪除</button></td></tr>';}).join('');
   var svcCard='<div class="card"><div class="card-head"><h3>服務項目</h3><button class="btn sm" onclick="addSvcModal()">+ 新增服務</button></div><div class="card-body flush"><table><thead><tr><th>項目</th><th>時長</th><th>費用</th><th>適用治療師</th><th></th></tr></thead><tbody>'+sRows+'</tbody></table>'+(SERVICES.length?'':'<div class="empty">尚無服務項目，點右上角「新增服務」建立。</div>')+'</div></div>';
-  var cards=PACKAGES.map(function(p){if(p.shockwave){var shots=p.shots||0;var perShot=shots?(p.price/shots):0;return '<div class="pkg-card" onclick="editShockwavePkgModal('+p.id+')"><div class="pkg-name">⚡ '+esc(p.name)+'</div><div class="pkg-svc">震波套票（不適用課程／服務）</div><div><span class="pkg-price">'+fmtNT(p.price)+'</span></div><div class="row" style="gap:5px"><span class="tag mint">'+shots.toLocaleString()+' 發</span>'+(perShot>0?'<span class="tag gray">每發 '+(perShot<1?perShot.toFixed(2):fmtNT(Math.round(perShot)))+'</span>':'')+'</div>'+(p.desc?'<div class="pkg-desc">'+esc(p.desc)+'</div>':'')+'</div>';}var primary=pkgPrimarySvc(p);var sv=svcOf(primary);var full=sv.price*p.sessions;var disc=full?Math.round(p.price/full*100):100;var per=p.sessions?Math.round(p.price/p.sessions):0;var svcLabel=pkgSvcLabel(p);return '<div class="pkg-card" onclick="editPkgModal('+p.id+')"><div class="pkg-name">'+esc(p.name)+'</div><div class="pkg-svc" title="'+esc(svcLabel)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(svcLabel)+'</div><div><span class="pkg-price">'+fmtNT(p.price)+'</span>'+(p.price<full&&p.price>0?'<span class="pkg-orig">'+fmtNT(full)+'</span>':'')+'</div><div class="row" style="gap:5px"><span class="tag mint">'+p.sessions+' 堂</span><span class="tag gray">每堂 '+fmtNT(per)+'</span>'+(p.price<full&&p.price>0?'<span class="tag amber">'+disc+' 折</span>':'')+'</div>'+(p.desc?'<div class="pkg-desc">'+esc(p.desc)+'</div>':'')+'</div>';}).join('');
+  var cards=PACKAGES.map(function(p){if(p.shockwave){var shots=p.shots||0;var perShot=shots?(p.price/shots):0;return '<div class="pkg-card" onclick="editShockwavePkgModal('+p.id+')"><div class="pkg-name">'+esc(p.name)+'</div><div class="pkg-svc">震波套票（不適用課程／服務）</div><div><span class="pkg-price">'+fmtNT(p.price)+'</span></div><div class="row" style="gap:5px"><span class="tag mint">'+shots.toLocaleString()+' 發</span>'+(perShot>0?'<span class="tag gray">每發 '+(perShot<1?perShot.toFixed(2):fmtNT(Math.round(perShot)))+'</span>':'')+'</div>'+(p.desc?'<div class="pkg-desc">'+esc(p.desc)+'</div>':'')+'</div>';}var primary=pkgPrimarySvc(p);var sv=svcOf(primary);var full=sv.price*p.sessions;var disc=full?Math.round(p.price/full*100):100;var per=p.sessions?Math.round(p.price/p.sessions):0;var svcLabel=pkgSvcLabel(p);return '<div class="pkg-card" onclick="editPkgModal('+p.id+')"><div class="pkg-name">'+esc(p.name)+'</div><div class="pkg-svc" title="'+esc(svcLabel)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(svcLabel)+'</div><div><span class="pkg-price">'+fmtNT(p.price)+'</span>'+(p.price<full&&p.price>0?'<span class="pkg-orig">'+fmtNT(full)+'</span>':'')+'</div><div class="row" style="gap:5px"><span class="tag mint">'+p.sessions+' 堂</span><span class="tag gray">每堂 '+fmtNT(per)+'</span>'+(p.price<full&&p.price>0?'<span class="tag amber">'+disc+' 折</span>':'')+'</div>'+(p.desc?'<div class="pkg-desc">'+esc(p.desc)+'</div>':'')+'</div>';}).join('');
   var pkgCard='<div class="card"><div class="card-head"><h3>課程方案（堂數套餐）</h3><button class="btn sm" onclick="addPkgModal()">+ 新增課程</button></div><div class="card-body"><div class="pkg-grid">'+cards+'<div class="pkg-card pkg-add" onclick="addPkgModal()"><div style="font-size:30px;font-weight:300">+</div><div>新增課程</div></div></div></div></div>';
   return shell('packages','服務與課程',svcCard+pkgCard,'<button class="btn ghost sm" onclick="publishCatalogModal()">發布到線上預約</button>');
 };
@@ -1893,12 +1852,12 @@ function clinicLinksCard(){
   return '<div class="card"><div class="card-head"><h3>線上預約與初診表單連結</h3><span class="tag mint">分享給個案</span></div><div class="card-body"><div class="banner info"><span>i</span><div>把連結或 QR code 分享給個案：貼到 LINE 官方帳號、IG 簡介，或印出 QR 貼在櫃台。個案線上送出的預約與初診表，會在總覽的通知鈴鐺出現，點鈴鐺裡的「重新整理」即可同步匯入後台。</div></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+block('線上預約','客戶自助選服務、治療師、時段',L.book,'qr-book','copyText(clinicLinks().book)','var(--mint)')+block('初診表單','首次就診前填寫基本資料與同意書',L.intake,'qr-intake','copyText(clinicLinks().intake)','var(--navy)')+'</div></div></div>';
 }
 views.clinic=function(){
-  var tRows=THERAPISTS.map(function(t,ti){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var _up=ti>0?'<button class="btn sm ghost" style="padding:1px 7px" onclick="moveT(\''+t.id+'\',-1)" title="上移">↑</button>':'<button class="btn sm ghost" style="padding:1px 7px;opacity:.25" disabled>↑</button>';var _dn=ti<THERAPISTS.length-1?'<button class="btn sm ghost" style="padding:1px 7px" onclick="moveT(\''+t.id+'\',1)" title="下移">↓</button>':'<button class="btn sm ghost" style="padding:1px 7px;opacity:.25" disabled>↓</button>';var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';return '<tr><td><div class="row" style="gap:8px;align-items:center"><div style="display:flex;flex-direction:column;gap:2px">'+_up+_dn+'</div><div><div class="t-name">'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title)+'</div></div></div></td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
+  var n=THERAPISTS.length;
+  var tRows=THERAPISTS.map(function(t,idx){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';var calTag=t.calendarId?'<div class="t-sub" style="margin-top:3px">行事曆：'+esc(t.calendarId)+'</div>':'';var up='<button class="btn sm gray" style="padding:2px 8px;line-height:1.2;font-size:11px;'+(idx===0?'opacity:.3':'')+'" '+(idx===0?'disabled':'onclick="moveTherapist(\''+t.id+'\',-1)"')+' title="上移">▲</button>';var down='<button class="btn sm gray" style="padding:2px 8px;line-height:1.2;font-size:11px;'+(idx===n-1?'opacity:.3':'')+'" '+(idx===n-1?'disabled':'onclick="moveTherapist(\''+t.id+'\',1)"')+' title="下移">▼</button>';return '<tr><td><div style="display:flex;flex-direction:column;gap:3px;align-items:center">'+up+down+'</div></td><td><div class="t-name"><span class="cal-dot" style="background:'+tColor(t.id)+';display:inline-block;margin-right:6px;vertical-align:middle"></span>'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title)+'</div>'+calTag+'</td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
   return shell('clinic','診所管理',
     clinicLinksCard()+
     reminderTemplateCard()+
-    
-    '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div></div>');
+    '<div class="card"><div class="card-head"><h3>治療師名單</h3><div class="row" style="gap:6px"><button class="btn sm ghost" onclick="standardRosterModal()">套用標準名單</button><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div></div><div class="card-body flush"><table><thead><tr><th style="width:54px;text-align:center">排序</th><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div><div style="padding:12px 18px;border-top:1px solid var(--line)"><div class="t-sub" style="line-height:1.7">用左側 ▲▼ 調整顯示順序，此順序會套用到全系統（預約篩選、排班、營運分析等）。個人 Google Calendar ID 可在「編輯」中設定，未設定者沿用診所預設行事曆。</div></div></div>');
 };
 /* saveCalendarId / pickGCalendar / chooseGCal 已移除（診所行事曆設定卡片已撤除）。預約仍自動同步至 CLINIC_INFO.calendarId（預設 primary）。 */
 function staffRoleOptions(sel){return [['admin','管理員（所有頁面）'],['therapist','治療師（看診相關）']].map(function(r){return '<option value="'+r[0]+'"'+(r[0]===sel?' selected':'')+'>'+r[1]+'</option>';}).join('');}
@@ -1907,22 +1866,51 @@ function tEditModal(tid,tab){
   var linked=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===tid;});
   var accRows=linked.length?linked.map(function(em){var s=EMAIL_WHITELIST[em];return '<div class="row" style="gap:8px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-family:monospace;font-size:12px;font-weight:600">'+esc(em)+'</div><div style="margin-top:3px"><span class="tag '+(s.role==='admin'?'amber':'mint')+'">'+(ROLE_LABELS[s.role]||s.role)+'</span></div></div><select onchange="setStaffRole(\''+esc(em)+'\',this.value)" style="padding:6px 8px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px">'+staffRoleOptions(s.role)+'</select><button class="shift-del" onclick="unlinkStaffEdit(\''+esc(em)+'\',\''+tid+'\')">&times;</button></div>';}).join(''):'<div class="empty" style="padding:20px">尚未連結任何帳號</div>';
   modal('<div class="modal-head" style="background:'+c+'">'+esc(t.name)+' - 編輯<button class="x" onclick="closeModal()">&times;</button></div><div class="edit-tabs"><button class="edit-tab'+(tab==='profile'?' active':'')+'" onclick="tEditTab(this,\'profile\')">基本資料</button><button class="edit-tab'+(tab==='account'?' active':'')+'" onclick="tEditTab(this,\'account\')">帳號權限</button></div>'+
-    '<div class="edit-panel'+(tab==='profile'?' active':'')+'" id="ted-profile"><div class="grid2"><div class="field"><label>姓名</label><input id="tp-name" value="'+esc(t.name)+'"></div><div class="field"><label>職稱</label><input id="tp-title" value="'+esc(t.title)+'"></div></div><div class="field"><label>代表色</label><input id="tp-color" type="color" value="'+c+'" style="width:60px;height:36px"></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTProfileEdit(\''+tid+'\')">儲存資料</button></div></div>'+
-    '<div class="edit-panel'+(tab==='account'?' active':'')+'" id="ted-account"><div class="sec-label">已連結帳號</div><div id="tedAccList">'+accRows+'</div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">新增 / 連結 Gmail 帳號</div><div class="field"><label>顯示名稱</label><input id="ta-name" value="'+esc(t.name)+'"></div><div class="field"><label>Gmail 帳號</label><input id="ta-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div><div class="field"><label>權限角色</label><select id="ta-role">'+staffRoleOptions('therapist')+'</select></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="addTAccountEdit(\''+tid+'\')">新增帳號</button></div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">行事曆同步 ID</div><div class="field"><label>Google 日曆 ID（留空＝同步到登入帳號主行事曆）</label><input id="tcal-id" value="'+esc(t.calendarId||'')+'" placeholder="貼上專屬日曆 ID 或 primary" style="font-family:monospace"></div><div style="font-size:11px;color:var(--slate);line-height:1.7;margin:-2px 0 12px">此治療師的預約會同步到這本行事曆；留空則進目前登入帳號的主行事曆。建議由操作系統的帳號自建一本專屬私人日曆，貼上其「日曆 ID」即可，無需分享。</div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTherapistCal(\''+tid+'\')">儲存行事曆 ID</button></div></div>'+
+    '<div class="edit-panel'+(tab==='profile'?' active':'')+'" id="ted-profile"><div class="grid2"><div class="field"><label>姓名</label><input id="tp-name" value="'+esc(t.name)+'"></div><div class="field"><label>職稱</label><input id="tp-title" value="'+esc(t.title)+'"></div></div><div class="field"><label>代表色</label><input id="tp-color" type="color" value="'+c+'" style="width:60px;height:36px"></div><div class="field"><label>個人 Google Calendar ID（選填）</label><input id="tp-cal" value="'+esc(t.calendarId||'')+'" placeholder="例：name@gmail.com 或 ...@group.calendar.google.com" style="font-family:monospace;font-size:12px"></div><div class="banner info"><span>i</span><div>填入後，此治療師的預約會同步到這個行事曆；留空則沿用診所預設行事曆，填 <b>primary</b> 代表登入者本人的主行事曆。注意：負責同步的登入帳號必須對該行事曆有「變更活動」權限（自己的行事曆，或已被對方分享編輯權限）。</div></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTProfileEdit(\''+tid+'\')">儲存資料</button></div></div>'+
+    '<div class="edit-panel'+(tab==='account'?' active':'')+'" id="ted-account"><div class="sec-label">已連結帳號</div><div id="tedAccList">'+accRows+'</div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">新增 / 連結 Gmail 帳號</div><div class="field"><label>顯示名稱</label><input id="ta-name" value="'+esc(t.name)+'"></div><div class="field"><label>Gmail 帳號</label><input id="ta-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div><div class="field"><label>權限角色</label><select id="ta-role">'+staffRoleOptions('therapist')+'</select></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="addTAccountEdit(\''+tid+'\')">新增帳號</button></div></div>'+
     '<div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">關閉</button></div>');
 }
-/* 每位治療師可在「帳號權限」分頁手動設定 calendarId：其預約即同步至該行事曆；留空則用 SYNC_CALENDAR_ID（預設 primary）。 */
-function saveTherapistCal(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;var v=(document.getElementById('tcal-id').value||'').trim();t.calendarId=v;saveAll();tEditModal(tid,'account');showToast(v?'已設定同步行事曆：'+v:'已清除，將同步到登入帳號主行事曆');}
+/* 治療師個別行事曆功能已移除；所有預約統一同步至診所預設行事曆（CLINIC_INFO.calendarId）。 */
 function tEditTab(btn,name){btn.parentNode.querySelectorAll('.edit-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');['profile','account'].forEach(function(n){var el=document.getElementById('ted-'+n);if(el)el.classList.toggle('active',n===name);});}
-function saveTProfileEdit(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;var n=document.getElementById('tp-name').value.trim();if(n){t.name=n;TN[tid]=n;}t.title=document.getElementById('tp-title').value.trim()||t.title;TC[tid]=document.getElementById('tp-color').value;closeModal();go('clinic');showToast('資料已儲存');}
+function saveTProfileEdit(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;var n=document.getElementById('tp-name').value.trim();if(n){t.name=n;TN[tid]=n;}t.title=document.getElementById('tp-title').value.trim()||t.title;TC[tid]=document.getElementById('tp-color').value;var cal=document.getElementById('tp-cal');if(cal)t.calendarId=cal.value.trim();closeModal();go('clinic');saveAll();showToast('資料已儲存');}
 function addTAccountEdit(tid){var name=document.getElementById('ta-name').value.trim();var email=document.getElementById('ta-email').value.trim().toLowerCase();var role=document.getElementById('ta-role').value;if(!name){showToast('請填寫名稱');return;}if(!email||email.indexOf('@')<1){showToast('請填寫有效的 Gmail');return;}var exists=EMAIL_WHITELIST[email];if(exists){var moved=exists.therapistId&&exists.therapistId!==tid;exists.therapistId=tid;exists.name=name||exists.name;if(role)exists.role=role;tEditModal(tid,'account');showToast(moved?'帳號已改綁到此治療師':'帳號已連結到此治療師');saveAll();return;}EMAIL_WHITELIST[email]={name:name,therapistId:tid,role:role};tEditModal(tid,'account');showToast('帳號已新增並連結');saveAll();}
 function setStaffRole(email,role){var s=EMAIL_WHITELIST[email];if(!s)return;var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});if(s.role==='admin'&&role!=='admin'&&admins.length<=1){showToast('至少需保留一位管理員');tEditModal(s.therapistId,'account');return;}s.role=role;showToast('權限已更新');saveAll();}
 function unlinkStaffEdit(email,tid){var s=EMAIL_WHITELIST[email];if(!s)return;var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});if(s.role==='admin'&&admins.length<=1){showToast('至少需保留一位管理員');return;}delete EMAIL_WHITELIST[email];tEditModal(tid,'account');showToast('已移除帳號');saveAll();}
 function addTModal(){modal('<div class="modal-head" style="background:var(--navy)">新增治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="grid2"><div class="field"><label>姓名</label><input id="nt-name"></div><div class="field"><label>職稱</label><input id="nt-title" value="物理治療師"></div></div><div class="field"><label>代表色</label><input id="nt-color" type="color" value="'+COLORS[THERAPISTS.length%COLORS.length]+'" style="width:60px;height:36px"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitT()">新增</button></div>');}
-function submitT(){var name=document.getElementById('nt-name').value.trim();if(!name){showToast('請填寫姓名');return;}var id='T'+Date.now();THERAPISTS.push({id:id,name:name,title:document.getElementById('nt-title').value||'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]});TN[id]=name;TC[id]=document.getElementById('nt-color').value;saveAll();closeModal();go('clinic');showToast('治療師已新增');}
+function submitT(){var name=document.getElementById('nt-name').value.trim();if(!name){showToast('請填寫姓名');return;}var id='T'+Date.now();THERAPISTS.push({id:id,name:name,title:document.getElementById('nt-title').value||'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]});TN[id]=name;TC[id]=document.getElementById('nt-color').value;closeModal();go('clinic');showToast('治療師已新增');}
 function delT(tid){if(THERAPISTS.length<=1){showToast('至少需保留一位治療師');return;}modal('<div class="modal-head" style="background:var(--danger)">刪除治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此治療師？相關預約紀錄不受影響。</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn danger" onclick="confirmDelT(\''+tid+'\')">確定刪除</button></div>');}
-function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;saveAll();closeModal();go('clinic');showToast('已刪除');}
-function moveT(id,dir){var i=THERAPISTS.findIndex(function(x){return x.id===id;});if(i<0)return;var j=i+dir;if(j<0||j>=THERAPISTS.length)return;var tmp=THERAPISTS[i];THERAPISTS[i]=THERAPISTS[j];THERAPISTS[j]=tmp;saveAll();go('clinic');}
+function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;closeModal();go('clinic');showToast('已刪除');}
+function moveTherapist(tid,dir){var i=THERAPISTS.findIndex(function(t){return t.id===tid;});if(i<0)return;var j=i+dir;if(j<0||j>=THERAPISTS.length)return;var tmp=THERAPISTS[i];THERAPISTS[i]=THERAPISTS[j];THERAPISTS[j]=tmp;saveAll();go('clinic');showToast('順序已更新');}
+// 一鍵把伺服器上的名單套成標準三位；以「連結的 Gmail」對應現有治療師，保留既有 id 與歷史資料
+function standardRosterModal(){
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可套用');return;}
+  modal('<div class="modal-head" style="background:var(--navy)">套用標準治療師名單<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner info"><span>i</span><div>會把名單依序設定為下列三位並對應好登入帳號。巫俊杉、張博源沿用原本身分（只更新職稱），現有預約、病歷、消費資料完全不受影響；若名單上還有其他治療師會保留並排在後面。</div></div>'+
+    '<div style="font-size:13px;line-height:2.1">1.　不指定　｜物理治療師　·　<span style="font-family:monospace">nycuptc@gmail.com</span><br>2.　巫俊杉　｜院長｜物理治療師　·　<span style="font-family:monospace">yewfir@gmail.com</span><br>3.　張博源　｜物理治療師　·　<span style="font-family:monospace">skyzbpt@gmail.com</span></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="applyStandardRoster()">確認套用</button></div>');
+}
+function applyStandardRoster(){
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可套用');return;}
+  var spec=[
+    {email:'nycuptc@gmail.com',name:'不指定',title:'物理治療師',fid:'nycu',color:'#94a3b8'},
+    {email:'yewfir@gmail.com',name:'巫俊杉',title:'院長｜物理治療師',fid:'wujs',color:'#2DC8A0'},
+    {email:'skyzbpt@gmail.com',name:'張博源',title:'物理治療師',fid:'Sky',color:'#1a4d68'}
+  ];
+  var ordered=[];
+  spec.forEach(function(s){
+    var w=EMAIL_WHITELIST[s.email];
+    var t=(w&&w.therapistId)?THERAPISTS.find(function(x){return x.id===w.therapistId;}):null;
+    if(!t)t=THERAPISTS.find(function(x){return x.id===s.fid;});
+    if(!t)t=THERAPISTS.find(function(x){return x.name===s.name;});
+    if(!t){t={id:s.fid,name:s.name,title:s.title,base:0,rate:0,workDays:[],week:{},leaves:[]};THERAPISTS.push(t);}
+    t.name=s.name;t.title=s.title;TN[t.id]=s.name;TC[t.id]=s.color;
+    EMAIL_WHITELIST[s.email]={name:s.name,therapistId:t.id,role:(w&&w.role)||'admin'};
+    ordered.push(t);
+  });
+  var rest=THERAPISTS.filter(function(t){return ordered.indexOf(t)<0;});
+  THERAPISTS.length=0;ordered.concat(rest).forEach(function(t){THERAPISTS.push(t);});
+  closeModal();saveAll();go('clinic');showToast('已套用標準名單並存回伺服器');
+}
 
 /* 線上預約／初診的病患端為獨立的 LIFF 頁面（liff-book.html / liff-intake.html），此後台僅負責「發布到線上預約」，不需要在本檔載入 catalog。 */
 
@@ -1947,6 +1935,7 @@ function __safeErrorToast(msg){
     if(t){t.textContent='操作發生問題，請重試或重新整理';t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2600);}
   }catch(e){}
 }
+/* __wrapHandler 已移除：未被任何地方呼叫（全域錯誤已由下方 error / unhandledrejection 監聽統一攔截） */
 /* 攔截全域未捕捉錯誤（含 onclick 內同步錯誤） */
 window.addEventListener('error',function(ev){
   var box=document.getElementById('frame');
