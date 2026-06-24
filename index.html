@@ -1253,10 +1253,14 @@ function checkoutModal(id){
   var pkey=pkgKeyForBooking(b);
   _coPkg=findUsablePkg(pkey,b.svc);
   var allPkgs=getPkgs(pkey);
-  var swPkg=getPkgs(pkey).find(function(x){return x.shockwave&&((x.totalShots||0)-(x.usedShots||0))>0;})||null;
-  window._coSwPkg=swPkg;
+  var swPkgs=getPkgs(pkey).filter(function(x){return x.shockwave&&((x.totalShots||0)-(x.usedShots||0))>0;});
+  window._coSwPkgs=swPkgs;
   var swBlock='';
-  if(swPkg){var swLeft=(swPkg.totalShots||0)-(swPkg.usedShots||0);var swDefault=Math.min(500,swLeft);swBlock='<div style="border:1.5px solid #f0c060;background:#fffbf0;border-radius:10px;padding:12px 14px;margin-bottom:12px"><label class="row" style="gap:8px;font-size:13px;font-weight:700;color:#9a6a10;cursor:pointer"><input type="checkbox" id="coSwUse" onchange="toggleSwUse(this)" style="width:auto;cursor:pointer"> 使用震波套票扣發數（獨立計算）</label><div id="coSwBox" style="display:none;margin-top:10px"><div style="font-size:12px;color:var(--slate);margin-bottom:8px">套票：<b>'+esc(swPkg.name)+'</b>　剩餘 <b>'+swLeft.toLocaleString()+'</b> 發</div><div class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">本次使用</span><input id="coSwShots" type="number" min="0" max="'+swLeft+'" step="100" value="'+swDefault+'" style="width:110px;padding:7px 9px;border:1.5px solid var(--mist);border-radius:8px;text-align:right;font-weight:700" oninput="updateSwLeft()"><span style="font-size:12px;color:var(--slate)">發</span><span style="font-size:12px;color:var(--slate);margin-left:6px;white-space:nowrap">扣抵後剩 <b id="coSwLeft">'+(swLeft-swDefault).toLocaleString()+'</b> 發</span></div><div style="font-size:11px;color:var(--slate);margin-top:8px;line-height:1.6">震波發數於此區獨立扣除，與上方服務付款分開計算；震波套票不適用任何課程或服務項目。</div></div></div>';}
+  if(swPkgs.length){
+    var swItems=swPkgs.map(function(sp){var swLeft=(sp.totalShots||0)-(sp.usedShots||0);var swDefault=Math.min(500,swLeft);return '<div style="border-top:1px dashed #e7c98a;padding-top:10px;margin-top:10px"><label class="row" style="gap:8px;font-size:13px;font-weight:700;color:#9a6a10;cursor:pointer"><input type="checkbox" class="coSwUse" data-pid="'+sp.id+'" onchange="toggleSwUse(this)" style="width:auto;cursor:pointer"> 使用「'+esc(sp.name)+'」扣發數（剩 '+swLeft.toLocaleString()+' 發）</label><div class="coSwBox" id="coSwBox-'+sp.id+'" style="display:none;margin-top:8px"><div class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">本次使用</span><input class="coSwShots" data-pid="'+sp.id+'" id="coSwShots-'+sp.id+'" type="number" min="0" max="'+swLeft+'" step="100" value="'+swDefault+'" style="width:100px;padding:7px 9px;border:1.5px solid var(--mist);border-radius:8px;text-align:right;font-weight:700" oninput="updateSwLeft(this)"><span style="font-size:12px;color:var(--slate)">發</span><span style="font-size:12px;color:var(--slate);margin-left:6px;white-space:nowrap">扣抵後剩 <b id="coSwLeft-'+sp.id+'">'+(swLeft-swDefault).toLocaleString()+'</b> 發</span></div></div></div>';}).join('');
+    swBlock='<div style="border:1.5px solid #f0c060;background:#fffbf0;border-radius:10px;padding:12px 14px;margin-bottom:12px"><div style="font-size:13px;font-weight:700;color:#9a6a10">震波套票扣發數（可複選、獨立計算）</div>'+swItems+'<div style="font-size:11px;color:var(--slate);margin-top:10px;line-height:1.6">震波發數於此區獨立扣除，與上方服務付款分開計算；可同時勾選多個套票分別扣發。震波套票不適用任何課程或服務項目。</div></div>';
+  }
+  
   var pkgPill=_coPkg?'<button class="pay-pill" data-p="package" onclick="setCoPay(\'package\')">使用課程（剩 '+(_coPkg.total-_coPkg.used)+' 堂）</button>':'';
   var pkgHint='';
   if(!_coPkg){
@@ -1277,8 +1281,8 @@ function checkoutModal(id){
     '<div style="font-size:11px;color:var(--slate)">勾選後自動帶入會員姓名、出生年月日、身分證字號</div></div>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="doCheckout('+id+')">確認結帳</button></div>');
 }
-function toggleSwUse(cb){var box=document.getElementById('coSwBox');if(box)box.style.display=cb.checked?'block':'none';}
-function updateSwLeft(){var sw=window._coSwPkg;if(!sw)return;var left=(sw.totalShots||0)-(sw.usedShots||0);var use=Math.max(0,Math.floor(Number((document.getElementById('coSwShots')||{}).value)||0));var el=document.getElementById('coSwLeft');if(el)el.textContent=Math.max(0,left-use).toLocaleString();}
+function toggleSwUse(cb){var pid=cb.getAttribute('data-pid');var box=document.getElementById('coSwBox-'+pid);if(box)box.style.display=cb.checked?'block':'none';}
+function updateSwLeft(input){var pid=input.getAttribute('data-pid');var sw=(window._coSwPkgs||[]).find(function(x){return String(x.id)===String(pid);});if(!sw)return;var left=(sw.totalShots||0)-(sw.usedShots||0);var use=Math.max(0,Math.floor(Number(input.value)||0));var el=document.getElementById('coSwLeft-'+pid);if(el)el.textContent=Math.max(0,left-use).toLocaleString();}
 function setCoPay(p){_coPay=p;document.querySelectorAll('#coPay .pay-pill').forEach(function(b){b.classList.toggle('sel',b.dataset.p===p);});var tf=document.getElementById('coTransfer');if(tf)tf.style.display=p==='transfer'?'block':'none';var isPkg=(p==='package');var rcw=document.getElementById('coRcWrap');if(rcw){rcw.style.display=isPkg?'none':'block';if(isPkg){var rcCb=document.getElementById('coRc');if(rcCb)rcCb.checked=false;}}var dw=document.getElementById('coDiscWrap');if(dw){dw.style.display=isPkg?'none':'block';if(isPkg){var dEl=document.getElementById('coDiscount');if(dEl)dEl.value=0;var dnEl=document.getElementById('coDiscountNote');if(dnEl)dnEl.value='';var bd=document.getElementById('coBreakdown');if(bd)bd.style.display='none';}}var note=document.getElementById('coPkgNote');if(p==='package'&&_coPkg){if(note){note.style.display='block';note.textContent='使用「'+_coPkg.name+'」扣 1 堂，扣抵後剩餘 '+(_coPkg.total-_coPkg.used-1)+' 堂；本次認列營收 '+fmtNT(_coPkg.unitPrice)+'。';}}else{if(note)note.style.display='none';}updateCoTotal();}
 function doCheckout(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
@@ -1286,22 +1290,12 @@ function doCheckout(id){
   var sv0=svcOf(b.svc);
   if(!sv0||sv0.price===0&&sv0.name==='-'){showToast('找不到對應服務，無法結帳');return;}
   var disc=Math.max(0,Number((document.getElementById('coDiscount')||{}).value)||0);var discNote=((document.getElementById('coDiscountNote')||{}).value||'').trim();
-  /* 震波發數扣除（與服務付款獨立計算）*/
-  var swUseEl=document.getElementById('coSwUse');var swUse=swUseEl&&swUseEl.checked;var swPkg=window._coSwPkg;var swShots=0;
-  if(swUse){
-    if(!swPkg){showToast('找不到震波套票');return;}
-    swShots=Math.max(0,Math.floor(Number((document.getElementById('coSwShots')||{}).value)||0));
-    var swRemain=(swPkg.totalShots||0)-(swPkg.usedShots||0);
-    if(swShots<=0){showToast('請輸入要扣除的震波發數');return;}
-    if(swShots>swRemain){showToast('扣除發數（'+swShots.toLocaleString()+'）超過剩餘 '+swRemain.toLocaleString()+' 發');return;}
-  }
-  var swMsg=swUse?('；震波扣 '+swShots.toLocaleString()+' 發，剩餘 '+((swPkg.totalShots||0)-(swPkg.usedShots||0)-swShots).toLocaleString()+' 發'):'';
-  function applyShockwave(){
-    if(!swUse||!swPkg||swShots<=0)return;
-    swPkg.usedShots=(swPkg.usedShots||0)+swShots;
-    var amt=Math.round(swShots*(swPkg.unitPrice||0));
-    PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:'',svcName:'震波套票扣 '+swShots.toLocaleString()+' 發',amount:amt,pay:'package',shockwave:true,swPkgId:swPkg.id,shotsUsed:swShots,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:'',note:'震波發數扣除'});
-  }
+  /* 震波發數扣除（與服務付款獨立計算，可複選多個套票）*/
+  var swDeducts=[];var swChecks=document.querySelectorAll('.coSwUse:checked');
+  for(var _si=0;_si<swChecks.length;_si++){var _pid=swChecks[_si].getAttribute('data-pid');var _swp=(window._coSwPkgs||[]).find(function(x){return String(x.id)===String(_pid);});if(!_swp)continue;var _sEl=document.getElementById('coSwShots-'+_pid);var _shots=Math.max(0,Math.floor(Number(_sEl&&_sEl.value)||0));var _remain=(_swp.totalShots||0)-(_swp.usedShots||0);if(_shots<=0){showToast('「'+_swp.name+'」請輸入要扣除的發數');return;}if(_shots>_remain){showToast('「'+_swp.name+'」扣除發數（'+_shots.toLocaleString()+'）超過剩餘 '+_remain.toLocaleString()+' 發');return;}swDeducts.push({pkg:_swp,shots:_shots});}
+  var swTotal=swDeducts.reduce(function(a,d){return a+d.shots;},0);
+  var swMsg=swDeducts.length?('；震波扣 '+swTotal.toLocaleString()+' 發'):'';
+  function applyShockwave(){swDeducts.forEach(function(d){d.pkg.usedShots=(d.pkg.usedShots||0)+d.shots;var amt=Math.round(d.shots*(d.pkg.unitPrice||0));PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:'',svcName:'震波套票扣 '+d.shots.toLocaleString()+' 發（'+d.pkg.name+'）',amount:amt,pay:'package',shockwave:true,swPkgId:d.pkg.id,shotsUsed:d.shots,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:'',note:'震波發數扣除'});});}
   if(_coPay==='package'){var pkg=findUsablePkg(pkgKeyForBooking(b),b.svc);if(!pkg){showToast('找不到可使用的課程');return;}pkg.used++;var pkgFinal=Math.max(0,pkg.unitPrice-disc);b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:discNote});applyShockwave();closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':'')+swMsg);return;}
   if(_coPay==='transfer'){var last5=(document.getElementById('co-last5').value||'').trim();var tdate=document.getElementById('co-tdate').value;if(last5.length!==5){showToast('請輸入匯款後五碼');return;}if(!tdate){showToast('請選擇匯款日期');return;}b.transferLast5=last5;b.transferDate=tdate;}else{b.transferLast5='';b.transferDate='';}
   var finalAmt=Math.max(0,sv0.price-disc);b.status='completed';b.pay=_coPay;b.paidAmount=finalAmt;
@@ -1340,7 +1334,7 @@ function receiptHTML(b,name,dob,idn){
   return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+genReceiptNo()+'</div></div>'+
     '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+dob+'</span></div>':'')+(idn?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+esc(idn)+'</span></div>':'')+'</div>'+
     '<div class="rc-sect"><div class="rc-st">治療資訊</div><div class="rc-r"><span class="rc-k">治療師</span><span class="rc-v">'+esc(tName(b.t))+'</span></div><div class="rc-r"><span class="rc-k">日期時間</span><span class="rc-v">'+b.date+' '+b.time+'</span></div><div class="rc-r"><span class="rc-k">項目</span><span class="rc-v">'+esc(sv.name)+' ('+sv.dur+'分)</span></div><div class="rc-r"><span class="rc-k">付款方式</span><span class="rc-v">'+pay+'</span></div>'+(b.pay==='transfer'&&b.transferLast5?'<div class="rc-r"><span class="rc-k">匯款後五碼</span><span class="rc-v">'+esc(b.transferLast5)+'</span></div><div class="rc-r"><span class="rc-k">匯款日期</span><span class="rc-v">'+esc(b.transferDate||'')+'</span></div>':'')+'<div class="rc-total"><span>實收金額</span><span>'+fmtNT(shown)+'</span></div></div>'+
-    '<div class="rc-stamps" style="align-items:center"><div class="rc-stamp"><div class="sl">收據章</div>'+stampClinic()+'</div><div class="rc-stamp"><div class="sl">印花章</div>'+stampOwner()+'</div><div class="rc-stamp"><div class="sl">治療師章</div>'+stampT(b.t)+'</div></div></div>';
+    '<div class="rc-stamps" style="align-items:center"><div class="rc-stamp">'+stampClinic()+'</div><div class="rc-stamp">'+stampOwner()+'</div><div class="rc-stamp">'+stampT(b.t)+'</div></div></div>';
 }
 var _rcData=null;
 function buildReceiptDoc(b,name,dob,idn){
