@@ -454,10 +454,10 @@ function notifyBellHTML(){
   var n=notifyUnreadCount();
   var badge=n>0?'<span class="notify-badge">'+(n>99?'99+':n)+'</span>':'';
   var pulse=n>0?' has-new':'';
-  return '<button class="notify-bell'+pulse+'" onclick="openNotifyPanel()" title="通知"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'+badge+'</button>';
+  return '<button id="notifyBell" class="notify-bell'+pulse+'" onclick="openNotifyPanel()" title="通知"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'+badge+'</button>';
 }
 function refreshNotifyBell(){
-  var bell=document.querySelector('.notify-bell');
+  var bell=document.getElementById('notifyBell');
   if(bell)bell.outerHTML=notifyBellHTML();
 }
 // 通知提示音（Web Audio 合成，無需外部檔案）
@@ -1857,7 +1857,7 @@ views.clinic=function(){
   return shell('clinic','診所管理',
     clinicLinksCard()+
     reminderTemplateCard()+
-    '<div class="card"><div class="card-head"><h3>治療師名單</h3><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div><div class="card-body flush"><table><thead><tr><th style="width:54px;text-align:center">排序</th><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div><div style="padding:12px 18px;border-top:1px solid var(--line)"><div class="t-sub" style="line-height:1.7">用左側 ▲▼ 調整顯示順序，此順序會套用到全系統（預約篩選、排班、營運分析等）。個人 Google Calendar ID 可在「編輯」中設定，未設定者沿用診所預設行事曆。</div></div></div>');
+    '<div class="card"><div class="card-head"><h3>治療師名單</h3><div class="row" style="gap:6px"><button class="btn sm ghost" onclick="standardRosterModal()">套用標準名單</button><button class="btn sm" onclick="addTModal()">+ 新增治療師</button></div></div><div class="card-body flush"><table><thead><tr><th style="width:54px;text-align:center">排序</th><th>治療師</th><th>對應帳號 / 權限</th><th></th></tr></thead><tbody>'+tRows+'</tbody></table></div><div style="padding:12px 18px;border-top:1px solid var(--line)"><div class="t-sub" style="line-height:1.7">用左側 ▲▼ 調整顯示順序，此順序會套用到全系統（預約篩選、排班、營運分析等）。個人 Google Calendar ID 可在「編輯」中設定，未設定者沿用診所預設行事曆。</div></div></div>');
 };
 /* saveCalendarId / pickGCalendar / chooseGCal 已移除（診所行事曆設定卡片已撤除）。預約仍自動同步至 CLINIC_INFO.calendarId（預設 primary）。 */
 function staffRoleOptions(sel){return [['admin','管理員（所有頁面）'],['therapist','治療師（看診相關）']].map(function(r){return '<option value="'+r[0]+'"'+(r[0]===sel?' selected':'')+'>'+r[1]+'</option>';}).join('');}
@@ -1881,6 +1881,36 @@ function submitT(){var name=document.getElementById('nt-name').value.trim();if(!
 function delT(tid){if(THERAPISTS.length<=1){showToast('至少需保留一位治療師');return;}modal('<div class="modal-head" style="background:var(--danger)">刪除治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此治療師？相關預約紀錄不受影響。</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn danger" onclick="confirmDelT(\''+tid+'\')">確定刪除</button></div>');}
 function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;closeModal();go('clinic');showToast('已刪除');}
 function moveTherapist(tid,dir){var i=THERAPISTS.findIndex(function(t){return t.id===tid;});if(i<0)return;var j=i+dir;if(j<0||j>=THERAPISTS.length)return;var tmp=THERAPISTS[i];THERAPISTS[i]=THERAPISTS[j];THERAPISTS[j]=tmp;saveAll();go('clinic');showToast('順序已更新');}
+// 一鍵把伺服器上的名單套成標準三位；以「連結的 Gmail」對應現有治療師，保留既有 id 與歷史資料
+function standardRosterModal(){
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可套用');return;}
+  modal('<div class="modal-head" style="background:var(--navy)">套用標準治療師名單<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner info"><span>i</span><div>會把名單依序設定為下列三位並對應好登入帳號。巫俊杉、張博源沿用原本身分（只更新職稱），現有預約、病歷、消費資料完全不受影響；若名單上還有其他治療師會保留並排在後面。</div></div>'+
+    '<div style="font-size:13px;line-height:2.1">1.　不指定　｜物理治療師　·　<span style="font-family:monospace">nycuptc@gmail.com</span><br>2.　巫俊杉　｜院長｜物理治療師　·　<span style="font-family:monospace">yewfir@gmail.com</span><br>3.　張博源　｜物理治療師　·　<span style="font-family:monospace">skyzbpt@gmail.com</span></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="applyStandardRoster()">確認套用</button></div>');
+}
+function applyStandardRoster(){
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可套用');return;}
+  var spec=[
+    {email:'nycuptc@gmail.com',name:'不指定',title:'物理治療師',fid:'nycu',color:'#94a3b8'},
+    {email:'yewfir@gmail.com',name:'巫俊杉',title:'院長｜物理治療師',fid:'wujs',color:'#2DC8A0'},
+    {email:'skyzbpt@gmail.com',name:'張博源',title:'物理治療師',fid:'Sky',color:'#1a4d68'}
+  ];
+  var ordered=[];
+  spec.forEach(function(s){
+    var w=EMAIL_WHITELIST[s.email];
+    var t=(w&&w.therapistId)?THERAPISTS.find(function(x){return x.id===w.therapistId;}):null;
+    if(!t)t=THERAPISTS.find(function(x){return x.id===s.fid;});
+    if(!t)t=THERAPISTS.find(function(x){return x.name===s.name;});
+    if(!t){t={id:s.fid,name:s.name,title:s.title,base:0,rate:0,workDays:[],week:{},leaves:[]};THERAPISTS.push(t);}
+    t.name=s.name;t.title=s.title;TN[t.id]=s.name;TC[t.id]=s.color;
+    EMAIL_WHITELIST[s.email]={name:s.name,therapistId:t.id,role:(w&&w.role)||'admin'};
+    ordered.push(t);
+  });
+  var rest=THERAPISTS.filter(function(t){return ordered.indexOf(t)<0;});
+  THERAPISTS.length=0;ordered.concat(rest).forEach(function(t){THERAPISTS.push(t);});
+  closeModal();saveAll();go('clinic');showToast('已套用標準名單並存回伺服器');
+}
 
 /* 線上預約／初診的病患端為獨立的 LIFF 頁面（liff-book.html / liff-intake.html），此後台僅負責「發布到線上預約」，不需要在本檔載入 catalog。 */
 
