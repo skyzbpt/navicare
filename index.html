@@ -531,16 +531,9 @@ function addNotify(kind,count){
   playNotifySound();
   try{refreshNotifyBell();}catch(e){}
   var label=(kind==='bk'?'收到新的線上預約':'收到新的初診表填寫');
-  try{showToast(label+'，請點同步匯入');}catch(e){}
-  try{fireSystemNotify('領航物理治療所',label+'，請進系統點「立即同步」匯入');}catch(e){}
-  try{showAlertBanner(label+'，請點「立即同步」匯入');}catch(e){}
+  try{fireSystemNotify('領航物理治療所',label+'，已自動匯入後台');}catch(e){}
+  try{showAlertBanner(label+'，已自動匯入後台 ✓');}catch(e){}
   try{if(document.hidden)startTitleFlash(label);}catch(e){}
-}
-// 靜默把待處理項目放進鈴鐺（不發聲、不跳橫幅）：用於登入首次檢查時，讓登出期間進來的送出仍可見
-function seedNotify(kind,count){
-  NOTIFY_LOG.unshift({id:'n'+Date.now()+Math.random().toString(36).slice(2,6),kind:kind,count:count,at:new Date().toISOString(),read:false});
-  if(NOTIFY_LOG.length>5)NOTIFY_LOG=NOTIFY_LOG.slice(0,5);
-  try{refreshNotifyBell();}catch(e){}
 }
 // 查詢待匯入數量；若比上次多，建立通知
 function checkPendingCount(){
@@ -550,19 +543,9 @@ function checkPendingCount(){
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
     var bk=((data&&data.bookings)||[]).length;
     var intake=((data&&data.intakes)||[]).length;
-    if(_notifyFirstRun){
-      // 首次：記錄基準，不發聲（避免登入就響）；但若已有待處理，靜默放進鈴鐺讓它可見
-      _lastSeen.bk=bk;_lastSeen.intake=intake;_notifyFirstRun=false;
-      if(bk>0)seedNotify('bk',bk);
-      if(intake>0)seedNotify('intake',intake);
-    }else{
-      if(bk>_lastSeen.bk)addNotify('bk',bk);
-      if(intake>_lastSeen.intake)addNotify('intake',intake);
-      _lastSeen.bk=bk;_lastSeen.intake=intake;
-    }
     _notifyCount.bk=bk;_notifyCount.intake=intake;
     refreshNotifyBell();
-    // 有待處理就自動匯入並儲存進預約管理（靜默；沿用既有匯入邏輯，會自動 saveAll 並 ack）
+    // 有待處理就自動匯入並儲存進預約管理；匯入時（pullSubmissions）會發出通知與鈴鐺
     if(bk>0||intake>0)pullSubmissions(true);
   }).catch(function(){});
   };
@@ -659,12 +642,7 @@ function reloadNotify(btn){
   }).catch(function(){});
   setTimeout(function(){
     fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
-      var bk=((data&&data.bookings)||[]).length;
-      var intake=((data&&data.intakes)||[]).length;
-      if(bk>_lastSeen.bk)addNotify('bk',bk);
-      if(intake>_lastSeen.intake)addNotify('intake',intake);
-      _lastSeen.bk=bk;_lastSeen.intake=intake;
-      _notifyCount.bk=bk;_notifyCount.intake=intake;
+      _notifyCount.bk=((data&&data.bookings)||[]).length;_notifyCount.intake=((data&&data.intakes)||[]).length;
       refreshNotifyBell();
       rebuildNotifyPanel();
       _fin();
@@ -923,6 +901,12 @@ function loadFromServer(cb){
       CLINIC_INFO._presetEduCatsCleared=true;
       if(typeof saveAll==='function')saveAll();
     }
+    // 一次性套用新版「明日提醒訊息範本」到已儲存範本（後端推播讀的是這個值）；之後可再自行於診所管理編輯。
+    if(!CLINIC_INFO._reminderTplV2){
+      REMINDER_TEMPLATE=REMINDER_DEFAULT;
+      CLINIC_INFO._reminderTplV2=true;
+      if(typeof saveAll==='function')saveAll();
+    }
     if(typeof setFavicon==='function')setFavicon();
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
@@ -1076,6 +1060,8 @@ function pullSubmissions(silent){
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
+      if(newBk>0)addNotify('bk',newBk);
+      if(newIntake>0)addNotify('intake',newIntake);
       showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')+(skipBk?'（'+skipBk+' 筆因時段衝突未匯入）':''));
       if(_curView==='bookings')renderCal();else if(_curView==='patients'||_curView==='dashboard')go(_curView);
       // 將新匯入的線上預約同步至對應治療師的 Google 行事曆（依 email 分流）
@@ -1904,7 +1890,7 @@ function clearLogo(){CLINIC_LOGO='';go('receipt');showToast('已移除 Logo');}
 
 /* ============ 診所管理 ============ */
 /* ============ 明日提醒訊息範本（可自訂）============ */
-var REMINDER_DEFAULT='【領航物理治療所】\n親愛的貴賓，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 {date}\n⏰ {timerange}\n🏥 {service}\n🩺 治療師：{therapist}\n如有異動請於前一工作日來電 (02)2826-1698\n\n⚠️\n因故遲到者恕不延後治療時段，而費用將以原先預約項目價格進行收費。\n為保障其他學員預約需求，如需取消或更改時間，請於「前一工作日18:00前」告知。\n\n提醒您：如欲一次性預約≥2次以上的課程，需先預付所有預約的款項。\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
+var REMINDER_DEFAULT='【領航物理治療所】\n親愛的{name} ，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 {date}\n⏰ {timerange}\n🏥 {service}\n🩺 治療師：{therapist}\n\n⚠️\n因故遲到者恕不延後治療時段\n而費用將以原先預約項目價格進行收費\n為保障其他學員預約需求\n如需取消或更改時間\n請於「前一工作日18:00前」告知\n\n提醒您：如欲一次性預約≥2次以上的課程\n需先預付所有預約的款項\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
 var REMINDER_TEMPLATE='';
 function fillReminderTpl(tpl){return tpl.replace(/{name}/g,'王小明').replace(/{date}/g,'2026-06-21').replace(/{timerange}/g,'14:00–14:50（共 50 分鐘）').replace(/{endtime}/g,'14:50').replace(/{duration}/g,'50').replace(/{therapist}/g,'張博源').replace(/{time}/g,'14:00').replace(/{service}/g,'整合物理治療');}
 function reminderTemplateCard(){
