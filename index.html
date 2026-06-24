@@ -1008,18 +1008,18 @@ function calActive(tid){return Object.keys(calFilter).filter(function(k){return 
 function anyFilter(){return Object.keys(calFilter).some(function(k){return calFilter[k];});}
 /* ── 篩選治療師（彈窗點選）── */
 function calFilterBtnLabel(){
-  var icon='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>';
+  var icon='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>';
   var n=Object.keys(calFilter).filter(function(k){return calFilter[k];}).length;
-  return icon+(n===0?'篩選治療師':'已篩選 '+n+' 位');
+  return '<span style="display:inline-flex;align-items:center;gap:5px;line-height:1">'+icon+(n===0?'篩選治療師':'已篩選 '+n+' 位')+'</span>';
 }
 function refreshCalFilterBtn(){var b=document.getElementById('calFilterBtn');if(b)b.innerHTML=calFilterBtnLabel();}
 function calFilterRows(){
   var allOn=!anyFilter();
-  function chk(on,color){return '<span style="width:22px;height:22px;border-radius:6px;border:1.5px solid '+color+';background:'+(on?color:'#fff')+';color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">'+(on?'&check;':'')+'</span>';}
-  var head='<label class="row" style="gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer;margin:0" onclick="toggleCalFilterAll()">'+chk(allOn,'var(--mint)')+'<span style="font-weight:700">全部治療師</span></label>';
+  function chk(on,color){return '<span style="width:22px;height:22px;border-radius:6px;border:1.5px solid '+color+';background:'+(on?color:'#fff')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;line-height:1">'+(on?'&check;':'')+'</span>';}
+  var head='<label style="display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer;margin:0" onclick="toggleCalFilterAll()">'+chk(allOn,'var(--mint)')+'<span style="font-weight:700;line-height:1">全部治療師</span></label>';
   var rows=THERAPISTS.map(function(t){
     var sel=!!calFilter[t.id];var c=tColor(t.id);
-    return '<label class="row" style="gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer;margin:0" onclick="toggleCalFilterT(\''+t.id+'\')">'+chk(sel,c)+'<span class="row" style="gap:8px;font-weight:600;margin:0"><span class="cal-dot" style="background:'+c+'"></span>'+esc(t.name)+'</span></label>';
+    return '<label style="display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer;margin:0" onclick="toggleCalFilterT(\''+t.id+'\')">'+chk(sel,c)+'<span style="display:inline-flex;align-items:center;gap:8px;font-weight:600;line-height:1"><span style="width:10px;height:10px;border-radius:50%;background:'+c+';flex-shrink:0"></span>'+esc(t.name)+'</span></label>';
   }).join('');
   return head+rows;
 }
