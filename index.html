@@ -1034,28 +1034,29 @@ function calToday(){calWeek=startOfWeek(new Date());renderCal();}
 function calNav(dir){if(!calWeek)calWeek=startOfWeek(new Date());calWeek.setDate(calWeek.getDate()+dir*7);renderCal();}
 function _myTherapistId(){return (currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;}
 function calActive(tid){var myT=_myTherapistId();if(myT)return tid===myT;return !calHidden[tid];}
-function shownTherapists(){return THERAPISTS.filter(function(t){return !calHidden[t.id];});}
-// 預約管理頂部的篩選控制：管理員顯示「篩選治療師」按鈕（可收折/展開各治療師預約），治療師顯示鎖定的「本人」標籤
+function hiddenCount(){return Object.keys(calHidden).filter(function(k){return calHidden[k];}).length;}
+// 預約管理頂部的篩選控制：管理員顯示漏斗 icon，治療師顯示鎖定的「本人」標籤
 function bookFilterControl(){
   var myT=_myTherapistId();
   if(myT){var mt=THERAPISTS.find(function(x){return x.id===myT;});var nm=mt?mt.name:myT;return '<span class="cal-pill active" style="background:'+tColor(myT)+';border-color:'+tColor(myT)+';color:#fff;cursor:default" title="治療師僅能檢視自己的預約"><span class="cal-dot" style="background:rgba(255,255,255,.7)"></span>'+esc(nm)+'（僅本人）</span>';}
   return bookFilterIcon();
 }
 function bookFilterIcon(){
-  var shown=shownTherapists().length;var total=THERAPISTS.length;
-  return '<button class="btn gray sm" id="bookFilterBtn" onclick="bookFilterModal()" title="篩選 / 收折治療師預約" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>篩選治療師 <span class="tag '+(shown?'mint':'gray')+'" style="padding:1px 7px">'+shown+'/'+total+'</span></button>';
+  var hn=hiddenCount();var badge=hn>0?'<span class="notify-badge">'+hn+'</span>':'';
+  return '<button class="notify-bell" id="bookFilterBtn" onclick="bookFilterModal()" title="篩選 / 收折治療師預約"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>'+badge+'</button>';
 }
 function updateFilterIcon(){var el=document.getElementById('bookFilterBtn');if(el)el.outerHTML=bookFilterIcon();}
 function bookFilterModal(){
   if(_myTherapistId())return;
-  var rows=THERAPISTS.map(function(t){var shown=!calHidden[t.id];return '<label class="row" style="justify-content:space-between;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer"><div class="row" style="gap:10px;min-width:0"><span class="cal-dot" style="background:'+tColor(t.id)+';width:12px;height:12px"></span><div style="min-width:0"><div style="font-weight:600">'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title||'')+'</div></div></div><input type="checkbox" data-tid="'+t.id+'" '+(shown?'checked':'')+' onchange="setTherapistShown(\''+t.id+'\',this.checked)" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--mint);cursor:pointer"></label>';}).join('');
-  modal('<div class="modal-head" style="background:var(--navy)">顯示哪些治療師的預約<button class="x" onclick="closeModal()">&times;</button></div>'+
-    '<div class="modal-body"><div class="banner info"><span>i</span><div>勾選要在行事曆顯示的治療師，未勾選者的預約會收折隱藏。預設全部收折，請勾選要查看的對象；此設定只影響檢視，不會更動任何預約。</div></div>'+
-    '<div class="row" style="gap:6px;margin-bottom:10px"><button class="btn sm ghost" onclick="setAllShown(true)">全部顯示</button><button class="btn sm gray" onclick="setAllShown(false)">全部收折</button></div>'+
+  var rows=THERAPISTS.map(function(t){var hidden=!!calHidden[t.id];return '<div class="row" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><div class="row" style="gap:9px;min-width:0"><span class="cal-dot" style="background:'+tColor(t.id)+';width:12px;height:12px"></span><div style="min-width:0"><div style="font-weight:600">'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title||'')+'</div></div></div><button class="btn sm '+(hidden?'gray':'mint')+'" style="flex-shrink:0" onclick="toggleHideT(\''+t.id+'\',this)">'+(hidden?'已收折':'顯示中')+'</button></div>';}).join('');
+  modal('<div class="modal-head" style="background:var(--navy)">篩選 / 收折治療師預約<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner info"><span>i</span><div>關閉某位治療師後，行事曆會收折隱藏他的預約，方便專注看特定治療師；可隨時再打開。此設定只影響檢視，不會更動任何預約。</div></div>'+
+    '<div class="row" style="gap:6px;margin-bottom:12px"><button class="btn sm ghost" onclick="showAllT()">全部顯示</button><button class="btn sm gray" onclick="hideAllT()">全部收折</button></div>'+
     rows+'</div><div class="modal-foot"><button class="btn" onclick="closeModal()">完成</button></div>');
 }
-function setTherapistShown(tid,shown){calHidden[tid]=!shown;renderCal();updateFilterIcon();}
-function setAllShown(shown){THERAPISTS.forEach(function(t){calHidden[t.id]=!shown;});renderCal();updateFilterIcon();bookFilterModal();}
+function toggleHideT(tid,btn){calHidden[tid]=!calHidden[tid];var hidden=!!calHidden[tid];if(btn){btn.textContent=hidden?'已收折':'顯示中';btn.className='btn sm '+(hidden?'gray':'mint');}renderCal();updateFilterIcon();}
+function showAllT(){calHidden={};renderCal();updateFilterIcon();bookFilterModal();}
+function hideAllT(){THERAPISTS.forEach(function(t){calHidden[t.id]=true;});renderCal();updateFilterIcon();bookFilterModal();}
 function renderCal(){
   var mount=document.getElementById('calMount');if(!mount)return;
   if(!calWeek)calWeek=startOfWeek(new Date());
