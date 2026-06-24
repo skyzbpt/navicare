@@ -826,7 +826,7 @@ var _saveExpiredNotified=false;
 function saveAll(){
   if(!RENDER_URL||!currentUser)return Promise.resolve();
   if(_resetDone)return Promise.resolve();
-  var snap={SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,EMAIL_WHITELIST:EMAIL_WHITELIST,NOTIFY_LOG:NOTIFY_LOG};
+  var snap=buildSnapshot();delete snap._backupAt;delete snap._version;
   return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).then(function(r){
     if(r.status===401||r.status===403){
       if(!_saveExpiredNotified){_saveExpiredNotified=true;showSaveExpiredModal();}
@@ -1026,21 +1026,36 @@ function slotConflict(tid,date,startMin,svcId,excludeId){
 }
 
 /* ============ 預約管理 ============ */
-var calWeek=null;var calFilter={};
+var calWeek=null;var calHidden={};
 var _pendingStatus={};
 function startOfWeek(d){var r=new Date(d);var day=r.getDay();r.setDate(r.getDate()-(day===0?6:day-1));r.setHours(0,0,0,0);return r;}
 function dstr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function calToday(){calWeek=startOfWeek(new Date());renderCal();}
 function calNav(dir){if(!calWeek)calWeek=startOfWeek(new Date());calWeek.setDate(calWeek.getDate()+dir*7);renderCal();}
 function _myTherapistId(){return (currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;}
-function setCalFilter(tid){if(_myTherapistId())return;if(tid==='all')calFilter={};else calFilter[tid]=!calFilter[tid];var el=document.getElementById('calPills');if(el)el.innerHTML=calPills();renderCal();}
-function calActive(tid){var myT=_myTherapistId();if(myT)return tid===myT;return Object.keys(calFilter).filter(function(k){return calFilter[k];}).length===0||calFilter[tid];}
-function anyFilter(){return Object.keys(calFilter).some(function(k){return calFilter[k];});}
-function calPills(){
+function calActive(tid){var myT=_myTherapistId();if(myT)return tid===myT;return !calHidden[tid];}
+function shownTherapists(){return THERAPISTS.filter(function(t){return !calHidden[t.id];});}
+// 預約管理頂部的篩選控制：管理員顯示「篩選治療師」按鈕（可收折/展開各治療師預約），治療師顯示鎖定的「本人」標籤
+function bookFilterControl(){
   var myT=_myTherapistId();
   if(myT){var mt=THERAPISTS.find(function(x){return x.id===myT;});var nm=mt?mt.name:myT;return '<span class="cal-pill active" style="background:'+tColor(myT)+';border-color:'+tColor(myT)+';color:#fff;cursor:default" title="治療師僅能檢視自己的預約"><span class="cal-dot" style="background:rgba(255,255,255,.7)"></span>'+esc(nm)+'（僅本人）</span>';}
-  var h='<button class="cal-pill'+(!anyFilter()?' active':'')+'" onclick="setCalFilter(\'all\')">全部</button>';THERAPISTS.forEach(function(t){var sel=!!calFilter[t.id];h+='<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(t.id)+';border-color:'+tColor(t.id)+';color:#fff;':'')+'" onclick="setCalFilter(\''+t.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(t.id))+'"></span>'+t.name+'</button>';});return h;
+  return bookFilterIcon();
 }
+function bookFilterIcon(){
+  var shown=shownTherapists().length;var total=THERAPISTS.length;
+  return '<button class="btn gray sm" id="bookFilterBtn" onclick="bookFilterModal()" title="篩選 / 收折治療師預約" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>篩選治療師 <span class="tag '+(shown?'mint':'gray')+'" style="padding:1px 7px">'+shown+'/'+total+'</span></button>';
+}
+function updateFilterIcon(){var el=document.getElementById('bookFilterBtn');if(el)el.outerHTML=bookFilterIcon();}
+function bookFilterModal(){
+  if(_myTherapistId())return;
+  var rows=THERAPISTS.map(function(t){var shown=!calHidden[t.id];return '<label class="row" style="justify-content:space-between;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer"><div class="row" style="gap:10px;min-width:0"><span class="cal-dot" style="background:'+tColor(t.id)+';width:12px;height:12px"></span><div style="min-width:0"><div style="font-weight:600">'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title||'')+'</div></div></div><input type="checkbox" data-tid="'+t.id+'" '+(shown?'checked':'')+' onchange="setTherapistShown(\''+t.id+'\',this.checked)" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--mint);cursor:pointer"></label>';}).join('');
+  modal('<div class="modal-head" style="background:var(--navy)">顯示哪些治療師的預約<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner info"><span>i</span><div>勾選要在行事曆顯示的治療師，取消勾選者的預約會收折隱藏。預設全部顯示；此設定只影響檢視，不會更動任何預約。</div></div>'+
+    '<div class="row" style="gap:6px;margin-bottom:10px"><button class="btn sm ghost" onclick="setAllShown(true)">全部顯示</button><button class="btn sm gray" onclick="setAllShown(false)">全部收折</button></div>'+
+    rows+'</div><div class="modal-foot"><button class="btn" onclick="closeModal()">完成</button></div>');
+}
+function setTherapistShown(tid,shown){calHidden[tid]=!shown;renderCal();updateFilterIcon();}
+function setAllShown(shown){THERAPISTS.forEach(function(t){calHidden[t.id]=!shown;});renderCal();updateFilterIcon();bookFilterModal();}
 function renderCal(){
   var mount=document.getElementById('calMount');if(!mount)return;
   if(!calWeek)calWeek=startOfWeek(new Date());
@@ -1077,7 +1092,7 @@ function renderCal(){
 }
 views.bookings=function(){
   return shell('bookings','預約管理','<div id="calMount"></div>',
-    '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button><div class="row" id="calPills" style="gap:5px">'+calPills()+'</div><button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
+    '<div class="row" style="gap:8px;align-items:center"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button>'+bookFilterControl()+'<button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
 };
 function addBkModal(){
   var myT=_myTherapistId();
@@ -1783,7 +1798,7 @@ function svcCheckboxes(domId,selected){selected=selected||[];return '<div id="'+
 function collectSvcChecks(domId){var out=[];var w=document.getElementById(domId);if(w)w.querySelectorAll('.svc-chk:checked').forEach(function(c){out.push(c.value);});return out;}
 function addPkgModal(){if(!SERVICES.length){showToast('請先建立服務項目');return;}modal('<div class="modal-head" style="background:var(--navy)">新增課程<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>課程名稱</label><input id="pk-name" placeholder="例：紅繩五堂套餐"></div><div class="field"><label>適用服務（可複選）</label>'+svcCheckboxes('pk-svcs',[])+'</div><div class="grid2"><div class="field"><label>堂數</label><input id="pk-ses" type="number" value="5" min="1"></div><div class="field"><label>售價 (NT$)</label><input id="pk-price" type="number" value="7000" min="0"></div></div><div class="field"><label>說明</label><input id="pk-desc" placeholder="優惠說明"></div><div class="field"><label>由哪些治療師提供</label>'+therapistChecks('pk-ts',[])+'</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitPkg()">新增</button></div>');}
 function submitPkg(){var name=document.getElementById('pk-name').value.trim();if(!name){showToast('請填寫課程名稱');return;}var svcs=collectSvcChecks('pk-svcs');if(!svcs.length){showToast('請至少選一個適用服務');return;}PACKAGES.push({id:++PKG_ID,name:name,svcs:svcs,sessions:Number(document.getElementById('pk-ses').value)||1,price:Number(document.getElementById('pk-price').value)||0,desc:document.getElementById('pk-desc').value||'',ts:collectTherapistChecks('pk-ts')});closeModal();go('packages');showToast('課程已新增');}
-function editPkgModal(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">編輯課程<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>課程名稱</label><input id="pke-name" value="'+esc(p.name)+'"></div><label class="row" style="font-size:13px;gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mint-l);border:1px solid var(--mint);border-radius:8px"><input type="checkbox" id="pke-any" '+(p.anySvc?'checked':'')+' style="width:auto" onchange="document.getElementById(\'pke-svcs-wrap\').style.display=this.checked?\'none\':\'block\'"> <b>不限服務扣抵</b>（勾選後此套票可扣抵任何服務項目）</label><div id="pke-svcs-wrap" style="display:'+(p.anySvc?'none':'block')+'"><div class="field"><label>適用服務（可複選）</label>'+svcCheckboxes('pke-svcs',pkgSvcs(p))+'</div></div><div class="grid2"><div class="field"><label>堂數</label><input id="pke-ses" type="number" value="'+p.sessions+'"></div><div class="field"><label>售價</label><input id="pke-price" type="number" value="'+p.price+'"></div></div><div class="field"><label>說明</label><input id="pke-desc" value="'+esc(p.desc)+'"></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="delPkg('+id+')">刪除</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="savePkg('+id+')">儲存</button></div></div>');}
+function editPkgModal(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">編輯課程<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>課程名稱</label><input id="pke-name" value="'+esc(p.name)+'"></div><label class="row" style="font-size:13px;gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mint-l);border:1px solid var(--mint);border-radius:8px"><input type="checkbox" id="pke-any" '+(p.anySvc?'checked':'')+' style="width:auto" onchange="document.getElementById(\'pke-svcs-wrap\').style.display=this.checked?\'none\':\'block\'"> <b>不限服務扣抵</b>（勾選後此套票可扣抵任何服務項目）</label><div id="pke-svcs-wrap" style="display:'+(p.anySvc?'none':'block')+'"><div class="field"><label>適用服務（可複選）</label>'+svcCheckboxes('pke-svcs',pkgSvcs(p))+'</div></div><div class="grid2"><div class="field"><label>堂數</label><input id="pke-ses" type="number" value="'+p.sessions+'"></div><div class="field"><label>售價</label><input id="pke-price" type="number" value="'+p.price+'"></div></div><div class="field"><label>說明</label><input id="pke-desc" value="'+esc(p.desc)+'"></div><div class="field"><label>由哪些治療師提供</label>'+therapistChecks('pke-ts',p.ts||[])+'</div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="delPkg('+id+')">刪除</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="savePkg('+id+')">儲存</button></div></div>');}
 function savePkg(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;p.name=document.getElementById('pke-name').value.trim()||p.name;var anySvc=document.getElementById('pke-any').checked;p.anySvc=anySvc;if(anySvc){p.svcs=p.svcs&&p.svcs.length?p.svcs:[];}else{var svcs=collectSvcChecks('pke-svcs');if(!svcs.length){showToast('請至少選一個適用服務，或勾選「不限服務扣抵」');return;}p.svcs=svcs;}delete p.svc;p.sessions=Number(document.getElementById('pke-ses').value)||p.sessions;p.price=Number(document.getElementById('pke-price').value)||p.price;p.desc=document.getElementById('pke-desc').value||'';p.ts=collectTherapistChecks('pke-ts');closeModal();go('packages');showToast('已儲存');}
 function delPkg(id){var i=PACKAGES.findIndex(function(x){return x.id===id;});if(i>-1)PACKAGES.splice(i,1);closeModal();go('packages');showToast('已刪除');}
 
