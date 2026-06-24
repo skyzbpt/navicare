@@ -734,7 +734,7 @@ views.dashboard=function(){
   var today=todayStr();
   var done=BOOKINGS.filter(function(b){return b.status==='completed';});
   var rev=PAYMENTS.reduce(function(a,p){return a+(p.amount||0);},0);
-  var stampBase=PAYMENTS.filter(function(p){return p.pay!=='transfer';}).reduce(function(a,p){return a+(p.amount||0);},0);
+  var stampBase=PAYMENTS.filter(function(p){return p.pay!=='transfer'&&p.pay!=='package';}).reduce(function(a,p){return a+(p.amount||0);},0);
   var todayBks=BOOKINGS.filter(function(b){return b.date===today;});
   var future=BOOKINGS.filter(function(b){return b.date>today&&b.status==='confirmed';});
   var tCount={};THERAPISTS.forEach(function(t){tCount[t.id]=done.filter(function(b){return b.t===t.id;}).length;});
@@ -745,7 +745,7 @@ views.dashboard=function(){
   cs.list.forEach(function(r){if(r.bucket)careCounts[r.bucket]++;});
   var careNeed=cs.list.filter(function(r){return r.bucket;}).length;
   var careRows=ATTN_BUCKETS.map(function(b){return '<div class="status-row" style="cursor:pointer" onclick="setCareFilter(\''+b.id+'\')"><b style="font-weight:600"><span class="cal-dot" style="background:'+b.color+';display:inline-block;margin-right:7px;vertical-align:middle"></span>'+b.label+'</b><span class="tag" style="background:'+b.light+';color:'+b.color+'">'+careCounts[b.id]+' 位</span></div>';}).join('');
-  var avg=PAYMENTS.length?Math.round(rev/PAYMENTS.length):0;
+  var custN=custTickets(PAYMENTS);var avg=custN?Math.round(rev/custN):0;
   return shell('dashboard','總覽',
     '<div class="stat-grid">'+
     '<div class="stat-card highlight"><div class="sc-n mint">'+done.length+'</div><div class="sc-l">累計治療人次</div></div>'+
@@ -881,7 +881,7 @@ function lineTemplates(b){
   var terms='\n\n⚠️\n因故遲到者恕不延後治療時段，而費用將以原先預約項目價格進行收費。\n為保障其他學員預約需求，如需取消或更改時間，請於「前一工作日18:00前」告知。\n\n提醒您：如欲一次性預約≥2次以上的課程，需先預付所有預約的款項。\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
   return {
     confirm:'【領航物理治療所】\n您的預約已確認 ✅\n以下為您的預約資訊：\n📅 '+b.date+'\n⏰ '+timeRange+'\n🏥 '+sv.name+'\n🩺 治療師：'+tName(b.t)+'\n期待與您見面，如需更改請來電 (02)2826-1698'+terms,
-    remind:'【領航物理治療所】\n親愛的貴賓，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 '+b.date+'\n⏰ '+timeRange+'\n🏥 '+sv.name+'\n🩺 治療師：'+tName(b.t)+'\n如有異動請於前一工作日來電 (02)2826-1698'+terms,
+    remind:'【領航物理治療所】\n親愛的'+(b.name||'貴賓')+' ，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 '+b.date+'\n⏰ '+timeRange+'\n🏥 '+sv.name+'\n🩺 治療師：'+tName(b.t)+'\n\n⚠️\n因故遲到者恕不延後治療時段\n而費用將以原先預約項目價格進行收費\n為保障其他學員預約需求\n如需取消或更改時間\n請於「前一工作日18:00前」告知\n\n提醒您：如欲一次性預約≥2次以上的課程\n需先預付所有預約的款項\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇',
     cancel:'【領航物理治療所】\n很抱歉，您於 '+b.date+' '+b.time+' 的預約已取消。\n如需重新預約請來電 (02)2826-1698。',
     complete:'【領航物理治療所】\n感謝您今日的到診 🙏\n如有任何不適歡迎回診或來電詢問。'
   };
@@ -1247,13 +1247,13 @@ function checkoutModal(id){
     '<div style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><div style="font-size:11px;font-weight:700;color:var(--slate);letter-spacing:.5px;margin-bottom:8px">🔒 內部減免（不顯示於收據）</div>'+
     '<div class="row" style="gap:8px;flex-wrap:wrap"><div class="row" style="gap:5px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">減免 NT$</span><input id="coDiscount" type="number" min="0" step="50" value="0" style="width:88px;padding:7px 9px;border:1.5px solid var(--mist);border-radius:8px;text-align:right;font-weight:700" oninput="updateCoTotal()"></div><input id="coDiscountNote" placeholder="原因備註（僅內部可見）" style="flex:1;min-width:120px;padding:7px 10px;border:1.5px solid var(--mist);border-radius:8px"></div>'+
     '<div id="coBreakdown" style="display:none;margin-top:8px;background:var(--navy-l);border:1px solid #bcd6e6;border-radius:8px;padding:10px 14px"><div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--slate)">原價</span><span id="coOrigPrice"></span></div><div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:6px;color:var(--danger)"><span>減免</span><span id="coDiscAmt"></span></div><div class="row" style="justify-content:space-between;font-size:13px;font-weight:700;border-top:1px solid #bcd6e6;padding-top:6px"><span>實收</span><span id="coFinalBreak"></span></div></div></div>'+
-    '<label class="row" style="font-size:13px;gap:8px;margin:10px 0"><input type="checkbox" id="coRc" style="width:auto"> 開立收據</label>'+
-    '<div style="font-size:11px;color:var(--slate)">勾選後自動帶入會員姓名、出生年月日、身分證字號</div>'+
+    '<div id="coRcWrap"><label class="row" style="font-size:13px;gap:8px;margin:10px 0"><input type="checkbox" id="coRc" style="width:auto"> 開立收據</label>'+
+    '<div style="font-size:11px;color:var(--slate)">勾選後自動帶入會員姓名、出生年月日、身分證字號</div></div>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="doCheckout('+id+')">確認結帳</button></div>');
 }
 function toggleSwUse(cb){var box=document.getElementById('coSwBox');if(box)box.style.display=cb.checked?'block':'none';}
 function updateSwLeft(){var sw=window._coSwPkg;if(!sw)return;var left=(sw.totalShots||0)-(sw.usedShots||0);var use=Math.max(0,Math.floor(Number((document.getElementById('coSwShots')||{}).value)||0));var el=document.getElementById('coSwLeft');if(el)el.textContent=Math.max(0,left-use).toLocaleString();}
-function setCoPay(p){_coPay=p;document.querySelectorAll('#coPay .pay-pill').forEach(function(b){b.classList.toggle('sel',b.dataset.p===p);});var tf=document.getElementById('coTransfer');if(tf)tf.style.display=p==='transfer'?'block':'none';var note=document.getElementById('coPkgNote');if(p==='package'&&_coPkg){if(note){note.style.display='block';note.textContent='使用「'+_coPkg.name+'」扣 1 堂，扣抵後剩餘 '+(_coPkg.total-_coPkg.used-1)+' 堂；本次認列營收 '+fmtNT(_coPkg.unitPrice)+'。';}}else{if(note)note.style.display='none';}updateCoTotal();}
+function setCoPay(p){_coPay=p;document.querySelectorAll('#coPay .pay-pill').forEach(function(b){b.classList.toggle('sel',b.dataset.p===p);});var tf=document.getElementById('coTransfer');if(tf)tf.style.display=p==='transfer'?'block':'none';var rcw=document.getElementById('coRcWrap');if(rcw){var isPkg=(p==='package');rcw.style.display=isPkg?'none':'block';if(isPkg){var rcCb=document.getElementById('coRc');if(rcCb)rcCb.checked=false;}}var note=document.getElementById('coPkgNote');if(p==='package'&&_coPkg){if(note){note.style.display='block';note.textContent='使用「'+_coPkg.name+'」扣 1 堂，扣抵後剩餘 '+(_coPkg.total-_coPkg.used-1)+' 堂；本次認列營收 '+fmtNT(_coPkg.unitPrice)+'。';}}else{if(note)note.style.display='none';}updateCoTotal();}
 function doCheckout(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
   if(PAYMENTS.some(function(x){return x.bookingId===b.id;})){showToast('此預約已結帳過');closeModal();return;}
@@ -1564,9 +1564,11 @@ function anaPeriod(offset){
   if(_anaMode==='quarter'){var q0=quarterOf(m);var qIdx=(y*4+q0)+offset;var qy=Math.floor(qIdx/4),qq=qIdx%4;var sm=qq*3+1,em=qq*3+3;var last=new Date(qy,em,0).getDate();return {from:qy+'-'+String(sm).padStart(2,'0')+'-01',to:qy+'-'+String(em).padStart(2,'0')+'-'+String(last).padStart(2,'0'),label:qy+' 年 Q'+(qq+1)+'（'+sm+'-'+em+' 月）'};}
   var yy2=y+offset;return {from:yy2+'-01-01',to:yy2+'-12-31',label:yy2+' 年'};
 }
+/* 客單價基準：同一天＋同一位病患的消費紀錄合併為「一筆客單」 */
+function custTickets(rows){var s={};rows.forEach(function(p){var k=(p.date||'')+'|'+(p.phone||p.name||('#'+p.id));s[k]=1;});return Object.keys(s).length;}
 function anaAgg(period){
   var rows=PAYMENTS.filter(function(p){if(p.date<period.from||p.date>period.to)return false;if(_anaT!=='__all__'&&p.t!==_anaT)return false;return true;});
-  var rev=rows.reduce(function(a,p){return a+(p.amount||0);},0);var count=rows.length;var avg=count?Math.round(rev/count):0;
+  var rev=rows.reduce(function(a,p){return a+(p.amount||0);},0);var count=rows.length;var custN=custTickets(rows);var avg=custN?Math.round(rev/custN):0;
   var svc={};rows.forEach(function(p){var k,nm;if(p.shockwave){k='__sw__';nm='震波套票（發數扣抵）';}else{k=p.svc||p.svcName;nm=p.svcName||svcOf(p.svc).name;}if(!svc[k])svc[k]={name:nm,count:0,rev:0};svc[k].count++;svc[k].rev+=(p.amount||0);});
   var byT={};rows.forEach(function(p){if(!byT[p.t])byT[p.t]={count:0,rev:0};byT[p.t].count++;byT[p.t].rev+=(p.amount||0);});
   return {rev:rev,count:count,avg:avg,svc:svc,byT:byT};
@@ -1641,9 +1643,9 @@ function doPayrollExport(){
 
 /* ============ 印花稅 ============ */
 views.stamptax=function(){
-  var taxable=PAYMENTS.filter(function(p){return p.pay!=='transfer';});var total=Math.floor(taxable.reduce(function(a,p){return a+(p.amount||0);},0)*0.004);
+  var taxable=PAYMENTS.filter(function(p){return p.pay!=='transfer'&&p.pay!=='package';});var total=Math.floor(taxable.reduce(function(a,p){return a+(p.amount||0);},0)*0.004);
   var rows=taxable.map(function(p){return '<tr><td class="t-name">'+esc(p.name)+'</td><td>'+esc(p.date)+'</td><td>'+esc(p.svcName)+'</td><td class="num">'+fmtNT(p.amount)+'</td><td class="num">'+fmtNT(Math.floor((p.amount||0)*0.004))+'</td></tr>';}).join('');
-  return shell('stamptax','印花稅','<div class="stat-grid"><div class="stat-card"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">應納印花稅</div></div><div class="stat-card"><div class="sc-n">'+taxable.length+'</div><div class="sc-l">應稅筆數</div></div></div><div class="card"><div class="card-body flush"><table><thead><tr><th>個案</th><th>日期</th><th>服務</th><th>金額</th><th>稅額</th></tr></thead><tbody>'+rows+'</tbody></table>'+(taxable.length?'':'<div class="empty">尚無應稅資料</div>')+'</div></div><div class="banner info"><span>i</span><div>稅額以實際收款金額 0.4% 計（匯款不計），資料來源為消費記錄。</div></div>');
+  return shell('stamptax','印花稅','<div class="stat-grid"><div class="stat-card"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">應納印花稅</div></div><div class="stat-card"><div class="sc-n">'+taxable.length+'</div><div class="sc-l">應稅筆數</div></div></div><div class="card"><div class="card-body flush"><table><thead><tr><th>個案</th><th>日期</th><th>服務</th><th>金額</th><th>稅額</th></tr></thead><tbody>'+rows+'</tbody></table>'+(taxable.length?'':'<div class="empty">尚無應稅資料</div>')+'</div></div><div class="banner info"><span>i</span><div>稅額以實際收款金額 0.4% 計（匯款、課程扣抵不計），資料來源為消費記錄。</div></div>');
 };
 
 /* ============ 客戶回流 / 需要關心的名單 ============ */
@@ -1827,7 +1829,7 @@ function clearLogo(){CLINIC_LOGO='';go('receipt');showToast('已移除 Logo');}
 
 /* ============ 診所管理 ============ */
 /* ============ 明日提醒訊息範本（可自訂）============ */
-var REMINDER_DEFAULT='【領航物理治療所】\n親愛的貴賓，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 {date}\n⏰ {timerange}\n🏥 {service}\n🩺 治療師：{therapist}\n如有異動請於前一工作日來電 (02)2826-1698\n\n⚠️\n因故遲到者恕不延後治療時段，而費用將以原先預約項目價格進行收費。\n為保障其他學員預約需求，如需取消或更改時間，請於「前一工作日18:00前」告知。\n\n提醒您：如欲一次性預約≥2次以上的課程，需先預付所有預約的款項。\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
+var REMINDER_DEFAULT='【領航物理治療所】\n親愛的{name} ，提醒您明日的預約即將到來 🔔\n別忘了準時赴約唷：\n📅 {date}\n⏰ {timerange}\n🏥 {service}\n🩺 治療師：{therapist}\n\n⚠️\n因故遲到者恕不延後治療時段\n而費用將以原先預約項目價格進行收費\n為保障其他學員預約需求\n如需取消或更改時間\n請於「前一工作日18:00前」告知\n\n提醒您：如欲一次性預約≥2次以上的課程\n需先預付所有預約的款項\n\n感謝您的配合，謝謝您的體諒，祝您平安順心😇';
 var REMINDER_TEMPLATE='';
 function fillReminderTpl(tpl){return tpl.replace(/{name}/g,'王小明').replace(/{date}/g,'2026-06-21').replace(/{timerange}/g,'14:00–14:50（共 50 分鐘）').replace(/{endtime}/g,'14:50').replace(/{duration}/g,'50').replace(/{therapist}/g,'張博源').replace(/{time}/g,'14:00').replace(/{service}/g,'整合物理治療');}
 function reminderTemplateCard(){
@@ -1869,7 +1871,7 @@ function clinicLinksCard(){
 }
 views.clinic=function(){
   var n=THERAPISTS.length;
-  var tRows=THERAPISTS.map(function(t,idx){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';var calTag=t.calendarId?'<div class="t-sub" style="margin-top:3px">行事曆：'+esc(t.calendarId)+'</div>':'';var up='<button class="btn sm gray" style="padding:2px 8px;line-height:1.2;font-size:11px;'+(idx===0?'opacity:.3':'')+'" '+(idx===0?'disabled':'onclick="moveTherapist(\''+t.id+'\',-1)"')+' title="上移">▲</button>';var down='<button class="btn sm gray" style="padding:2px 8px;line-height:1.2;font-size:11px;'+(idx===n-1?'opacity:.3':'')+'" '+(idx===n-1?'disabled':'onclick="moveTherapist(\''+t.id+'\',1)"')+' title="下移">▼</button>';return '<tr><td><div style="display:flex;flex-direction:column;gap:3px;align-items:center">'+up+down+'</div></td><td><div class="t-name"><span class="cal-dot" style="background:'+tColor(t.id)+';display:inline-block;margin-right:6px;vertical-align:middle"></span>'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title)+'</div>'+calTag+'</td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
+  var tRows=THERAPISTS.map(function(t,idx){var acc=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===t.id;});var accHtml=acc.length?acc.map(function(em){var s=EMAIL_WHITELIST[em];return '<div style="font-size:11px"><span style="font-family:monospace">'+esc(em)+'</span> <span class="tag '+(s.role==='admin'?'amber':'mint')+'" style="padding:1px 7px">'+(ROLE_LABELS[s.role]||s.role)+'</span></div>';}).join(''):'<span class="t-sub">未設定帳號</span>';var up='<button class="btn sm gray" style="padding:2px 8px;line-height:1.2;font-size:11px;'+(idx===0?'opacity:.3':'')+'" '+(idx===0?'disabled':'onclick="moveTherapist(\''+t.id+'\',-1)"')+' title="上移">▲</button>';var down='<button class="btn sm gray" style="padding:2px 8px;line-height:1.2;font-size:11px;'+(idx===n-1?'opacity:.3':'')+'" '+(idx===n-1?'disabled':'onclick="moveTherapist(\''+t.id+'\',1)"')+' title="下移">▼</button>';return '<tr><td><div style="display:flex;flex-direction:column;gap:3px;align-items:center">'+up+down+'</div></td><td><div class="t-name"><span class="cal-dot" style="background:'+tColor(t.id)+';display:inline-block;margin-right:6px;vertical-align:middle"></span>'+esc(t.name)+'</div><div class="t-sub">'+esc(t.title)+'</div>'+'</td><td>'+accHtml+'</td><td class="row" style="gap:5px;flex-wrap:wrap"><button class="btn sm ghost" onclick="tEditModal(\''+t.id+'\')">編輯</button><button class="btn sm ghost" onclick="payrollModal(\''+t.id+'\')">薪資</button><button class="btn sm danger" onclick="delT(\''+t.id+'\')">刪除</button></td></tr>';}).join('');
   return shell('clinic','診所管理',
     clinicLinksCard()+
     reminderTemplateCard()+
