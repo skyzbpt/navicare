@@ -377,6 +377,10 @@ function canManageTherapist(tid){
   if(BK_ADMIN_EMAILS.indexOf((u.email||'').toLowerCase())>=0)return true;
   return tid===u.therapistId;
 }
+/* 管理員判定：以帳號角色 role==='admin' 為準（亦相容舊的 BK_ADMIN_EMAILS）。 */
+function isAdmin(){var u=currentUser||{};return u.role==='admin'||BK_ADMIN_EMAILS.indexOf((u.email||'').toLowerCase())>=0;}
+/* 行事曆「檢視」範圍：管理員可檢視／篩選所有治療師；一般治療師只看自己（與編輯權限 canEditBk 分離）。 */
+function canViewTherapist(tid){return isAdmin()||tid===((currentUser&&currentUser.therapistId)||'');}
 var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false,gmailToken=null;
 
 /* ============ 共用工具 ============ */
@@ -535,15 +539,25 @@ function addNotify(kind,count){
   try{showAlertBanner(label+'，請點「立即同步」匯入');}catch(e){}
   try{if(document.hidden)startTitleFlash(label);}catch(e){}
 }
+// 靜默把待處理項目放進鈴鐺（不發聲、不跳橫幅）：用於登入首次檢查時，讓登出期間進來的送出仍可見
+function seedNotify(kind,count){
+  NOTIFY_LOG.unshift({id:'n'+Date.now()+Math.random().toString(36).slice(2,6),kind:kind,count:count,at:new Date().toISOString(),read:false});
+  if(NOTIFY_LOG.length>5)NOTIFY_LOG=NOTIFY_LOG.slice(0,5);
+  try{refreshNotifyBell();}catch(e){}
+}
 // 查詢待匯入數量；若比上次多，建立通知
 function checkPendingCount(){
   if(!RENDER_URL||!currentUser)return;
+  // 後台 API 需帶 Google token；token 約 1 小時過期。整天開著後台時，過期就先靜默續期，避免輪詢悄悄 401 導致「沒有通知」。
+  var _poll=function(){
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(data){
     var bk=((data&&data.bookings)||[]).length;
     var intake=((data&&data.intakes)||[]).length;
     if(_notifyFirstRun){
-      // 首次：只記錄基準，不發通知聲（避免登入時舊資料就響）
+      // 首次：記錄基準，不發聲（避免登入就響）；但若已有待處理，靜默放進鈴鐺讓它可見
       _lastSeen.bk=bk;_lastSeen.intake=intake;_notifyFirstRun=false;
+      if(bk>0)seedNotify('bk',bk);
+      if(intake>0)seedNotify('intake',intake);
     }else{
       if(bk>_lastSeen.bk)addNotify('bk',bk);
       if(intake>_lastSeen.intake)addNotify('intake',intake);
@@ -551,7 +565,13 @@ function checkPendingCount(){
     }
     _notifyCount.bk=bk;_notifyCount.intake=intake;
     refreshNotifyBell();
+    // 有待處理就自動匯入並儲存進預約管理（靜默；沿用既有匯入邏輯，會自動 saveAll 並 ack）
+    if(bk>0||intake>0)pullSubmissions(true);
   }).catch(function(){});
+  };
+  if(gcalToken&&Date.now()<gcalTokenExp){_poll();}
+  else if(gcalClient&&gcalConsented&&GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')<0){ensureGCal(_poll);}
+  else {_poll();}
 }
 var _notifyTimer=null;
 var _notifyFirstRun=true;
@@ -561,7 +581,7 @@ function startNotifyPolling(){
   _notifyFirstRun=true; // 首次檢查不發聲（避免登入就響）
   checkPendingCount();
   if(_notifyTimer)clearInterval(_notifyTimer);
-  _notifyTimer=setInterval(checkPendingCount,180000); // 每 3 分鐘檢查一次
+  _notifyTimer=setInterval(checkPendingCount,60000); // 每 60 秒檢查一次
 }
 function notifyTimeAgo(iso){
   var diff=Date.now()-new Date(iso).getTime();
@@ -889,6 +909,14 @@ function loadFromServer(cb){
     if(s.PUBLISHED_SVC_IDS!==undefined)PUBLISHED_SVC_IDS=s.PUBLISHED_SVC_IDS;if(s.PUBLISHED_PKG_IDS!==undefined)PUBLISHED_PKG_IDS=s.PUBLISHED_PKG_IDS;
     if(s.EMAIL_WHITELIST)Object.assign(EMAIL_WHITELIST,s.EMAIL_WHITELIST);
     if(Array.isArray(s.NOTIFY_LOG))NOTIFY_LOG=s.NOTIFY_LOG.slice(0,5);
+    // 一次性清除舊有預設標籤（如：下背痛、頸肩痛）。清完後設旗標並存回，之後新增的標籤不會再被清除。
+    if(!CLINIC_INFO._presetTagsCleared){
+      ALL_PT_TAGS.length=0;
+      Object.keys(PT_TAG_MAP).forEach(function(k){delete PT_TAG_MAP[k];});
+      Object.keys(PT_TAG_DATA).forEach(function(k){if(PT_TAG_DATA[k])PT_TAG_DATA[k].length=0;});
+      CLINIC_INFO._presetTagsCleared=true;
+      if(typeof saveAll==='function')saveAll();
+    }
     if(typeof setFavicon==='function')setFavicon();
     if(cb)cb();
   }).catch(function(e){console.warn('loadFromServer 失敗',e.message);if(cb)cb();});
@@ -1114,9 +1142,9 @@ function dstr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0
 function calToday(){calWeek=startOfWeek(new Date());renderCal();}
 function calNav(dir){if(!calWeek)calWeek=startOfWeek(new Date());calWeek.setDate(calWeek.getDate()+dir*7);renderCal();}
 function setCalFilter(tid){if(tid==='all')calFilter={};else calFilter[tid]=!calFilter[tid];var el=document.getElementById('calPills');if(el)el.innerHTML=calPills();var dot=document.getElementById('calFilterDot');if(dot)dot.style.display=anyFilter()?'inline-block':'none';renderCal();}
-function calActive(tid){if(!canManageTherapist(tid))return false;return Object.keys(calFilter).filter(function(k){return calFilter[k];}).length===0||calFilter[tid];}
+function calActive(tid){if(!canViewTherapist(tid))return false;return Object.keys(calFilter).filter(function(k){return calFilter[k];}).length===0||calFilter[tid];}
 function anyFilter(){return Object.keys(calFilter).some(function(k){return calFilter[k];});}
-function calPills(){var h='<button class="cal-pill'+(!anyFilter()?' active':'')+'" onclick="setCalFilter(\'all\')">全部</button>';THERAPISTS.filter(function(t){return canManageTherapist(t.id);}).forEach(function(t){var sel=!!calFilter[t.id];h+='<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(t.id)+';border-color:'+tColor(t.id)+';color:#fff;':'')+'" onclick="setCalFilter(\''+t.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(t.id))+'"></span>'+t.name+'</button>';});return h;}
+function calPills(){var h='<button class="cal-pill'+(!anyFilter()?' active':'')+'" onclick="setCalFilter(\'all\')">全部</button>';THERAPISTS.filter(function(t){return canViewTherapist(t.id);}).forEach(function(t){var sel=!!calFilter[t.id];h+='<button class="cal-pill'+(sel?' active':'')+'" style="'+(sel?'background:'+tColor(t.id)+';border-color:'+tColor(t.id)+';color:#fff;':'')+'" onclick="setCalFilter(\''+t.id+'\')"><span class="cal-dot" style="background:'+(sel?'rgba(255,255,255,.7)':tColor(t.id))+'"></span>'+t.name+'</button>';});return h;}
 function renderCal(){
   var mount=document.getElementById('calMount');if(!mount)return;
   if(!calWeek)calWeek=startOfWeek(new Date());
@@ -1152,7 +1180,7 @@ function renderCal(){
   mount.innerHTML=h;
 }
 views.bookings=function(){
-  var _showFilter=BK_ADMIN_EMAILS.indexOf(((currentUser&&currentUser.email)||'').toLowerCase())>=0;
+  var _showFilter=isAdmin();
   return shell('bookings','預約管理','<div id="calMount"></div>',
     '<div class="row" style="gap:8px"><div class="row" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px;gap:4px"><button onclick="calNav(-1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&lsaquo;</button><span id="calRange" style="font-size:13px;font-weight:600;min-width:110px;text-align:center"></span><button onclick="calNav(1)" style="width:26px;height:26px;border:none;background:none;border-radius:6px;font-size:16px;color:var(--slate)">&rsaquo;</button></div><button class="btn gray sm" onclick="calToday()">本週</button>'+(_showFilter?'<button id="calFilterBtn" class="btn gray sm" onclick="toggleCalFilter()" title="篩選治療師"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> 篩選<span id="calFilterDot" style="display:'+(anyFilter()?'inline-block':'none')+';width:6px;height:6px;border-radius:50%;background:var(--mint-d);margin-left:5px;vertical-align:middle"></span></button><div class="row" id="calPills" style="gap:5px;display:none;flex-wrap:wrap">'+calPills()+'</div>':'')+''+syncToolBtnHTML()+'<button class="btn sm" onclick="addBkModal()">+ 新增預約</button><button class="btn sm" style="background:#06C755;color:#fff" onclick="sendTomorrowRemindersNow()">立即推播明日提醒</button></div>');
 };
@@ -1908,11 +1936,10 @@ function tEditModal(tid,tab){
   var accRows=linked.length?linked.map(function(em){var s=EMAIL_WHITELIST[em];return '<div class="row" style="gap:8px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-family:monospace;font-size:12px;font-weight:600">'+esc(em)+'</div><div style="margin-top:3px"><span class="tag '+(s.role==='admin'?'amber':'mint')+'">'+(ROLE_LABELS[s.role]||s.role)+'</span></div></div><select onchange="setStaffRole(\''+esc(em)+'\',this.value)" style="padding:6px 8px;border:1.5px solid var(--mist);border-radius:7px;font-size:12px">'+staffRoleOptions(s.role)+'</select><button class="shift-del" onclick="unlinkStaffEdit(\''+esc(em)+'\',\''+tid+'\')">&times;</button></div>';}).join(''):'<div class="empty" style="padding:20px">尚未連結任何帳號</div>';
   modal('<div class="modal-head" style="background:'+c+'">'+esc(t.name)+' - 編輯<button class="x" onclick="closeModal()">&times;</button></div><div class="edit-tabs"><button class="edit-tab'+(tab==='profile'?' active':'')+'" onclick="tEditTab(this,\'profile\')">基本資料</button><button class="edit-tab'+(tab==='account'?' active':'')+'" onclick="tEditTab(this,\'account\')">帳號權限</button></div>'+
     '<div class="edit-panel'+(tab==='profile'?' active':'')+'" id="ted-profile"><div class="grid2"><div class="field"><label>姓名</label><input id="tp-name" value="'+esc(t.name)+'"></div><div class="field"><label>職稱</label><input id="tp-title" value="'+esc(t.title)+'"></div></div><div class="field"><label>代表色</label><input id="tp-color" type="color" value="'+c+'" style="width:60px;height:36px"></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTProfileEdit(\''+tid+'\')">儲存資料</button></div></div>'+
-    '<div class="edit-panel'+(tab==='account'?' active':'')+'" id="ted-account"><div class="sec-label">已連結帳號</div><div id="tedAccList">'+accRows+'</div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">新增 / 連結 Gmail 帳號</div><div class="field"><label>顯示名稱</label><input id="ta-name" value="'+esc(t.name)+'"></div><div class="field"><label>Gmail 帳號</label><input id="ta-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div><div class="field"><label>權限角色</label><select id="ta-role">'+staffRoleOptions('therapist')+'</select></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="addTAccountEdit(\''+tid+'\')">新增帳號</button></div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">行事曆同步 ID</div><div class="field"><label>Google 日曆 ID（留空＝同步到登入帳號主行事曆）</label><input id="tcal-id" value="'+esc(t.calendarId||'')+'" placeholder="貼上專屬日曆 ID 或 primary" style="font-family:monospace"></div><div style="font-size:11px;color:var(--slate);line-height:1.7;margin:-2px 0 12px">此治療師的預約會同步到這本行事曆；留空則進目前登入帳號的主行事曆。建議由操作系統的帳號自建一本專屬私人日曆，貼上其「日曆 ID」即可，無需分享。</div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="saveTherapistCal(\''+tid+'\')">儲存行事曆 ID</button></div></div>'+
+    '<div class="edit-panel'+(tab==='account'?' active':'')+'" id="ted-account"><div class="sec-label">已連結帳號</div><div id="tedAccList">'+accRows+'</div><div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">新增 / 連結 Gmail 帳號</div><div class="field"><label>顯示名稱</label><input id="ta-name" value="'+esc(t.name)+'"></div><div class="field"><label>Gmail 帳號</label><input id="ta-email" placeholder="example@gmail.com" style="font-family:monospace" oninput="this.value=this.value.toLowerCase().trim()"></div><div class="field"><label>權限角色</label><select id="ta-role">'+staffRoleOptions('therapist')+'</select></div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="addTAccountEdit(\''+tid+'\')">新增帳號</button></div></div>'+
     '<div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">關閉</button></div>');
 }
-/* 每位治療師可在「帳號權限」分頁手動設定 calendarId：其預約即同步至該行事曆；留空則用 SYNC_CALENDAR_ID（預設 primary）。 */
-function saveTherapistCal(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;var v=(document.getElementById('tcal-id').value||'').trim();t.calendarId=v;saveAll();tEditModal(tid,'account');showToast(v?'已設定同步行事曆：'+v:'已清除，將同步到登入帳號主行事曆');}
+/* 治療師預約自動同步至 CLINIC_INFO.calendarId（預設 primary）；若資料已存在 t.calendarId 仍沿用，但編輯卡片不再提供手動欄位。 */
 function tEditTab(btn,name){btn.parentNode.querySelectorAll('.edit-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');['profile','account'].forEach(function(n){var el=document.getElementById('ted-'+n);if(el)el.classList.toggle('active',n===name);});}
 function saveTProfileEdit(tid){var t=THERAPISTS.find(function(x){return x.id===tid;});if(!t)return;var n=document.getElementById('tp-name').value.trim();if(n){t.name=n;TN[tid]=n;}t.title=document.getElementById('tp-title').value.trim()||t.title;TC[tid]=document.getElementById('tp-color').value;closeModal();go('clinic');showToast('資料已儲存');}
 function addTAccountEdit(tid){var name=document.getElementById('ta-name').value.trim();var email=document.getElementById('ta-email').value.trim().toLowerCase();var role=document.getElementById('ta-role').value;if(!name){showToast('請填寫名稱');return;}if(!email||email.indexOf('@')<1){showToast('請填寫有效的 Gmail');return;}var exists=EMAIL_WHITELIST[email];if(exists){var moved=exists.therapistId&&exists.therapistId!==tid;exists.therapistId=tid;exists.name=name||exists.name;if(role)exists.role=role;tEditModal(tid,'account');showToast(moved?'帳號已改綁到此治療師':'帳號已連結到此治療師');saveAll();return;}EMAIL_WHITELIST[email]={name:name,therapistId:tid,role:role};tEditModal(tid,'account');showToast('帳號已新增並連結');saveAll();}
