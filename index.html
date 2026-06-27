@@ -368,6 +368,8 @@ function modal(h){document.getElementById('modalBox').innerHTML=h;document.getEl
 function closeModal(){document.getElementById('modalBg').classList.remove('show');}
 function showToast(m){var t=document.getElementById('sToast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2200);}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+/* 供 inline onclick="fn('VALUE')" 使用：先跳脫反斜線與單引號（JS 字串），再做 HTML 跳脫，避免姓名/備註含 ' 破壞處理函式 */
+function escJs(s){return esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));}
 function todayStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function genReceiptNo(){var n=new Date();return 'RC-'+n.getFullYear()+String(n.getMonth()+1).padStart(2,'0')+String(n.getDate()).padStart(2,'0')+'-'+String(Math.floor(Math.random()*9000)+1000);}
 function getRate(tid,svcId){var r=(T_SVC_RATES[tid]||{})[svcId];if(r!=null)return r;var t=THERAPISTS.find(function(x){return x.id===tid;});return t?t.rate:0;}
@@ -480,6 +482,8 @@ function playNotifySound(){
 }
 // 新增一筆通知到歷史（最多保留 5 筆）
 function addNotify(kind,count,silent){
+  // 去重：同類型、相同數量且仍未讀的通知不重複建立（避免重載/重複輪詢灌爆 5 筆上限）
+  if(NOTIFY_LOG.some(function(n){return n.kind===kind&&!n.read&&n.count===count;}))return;
   NOTIFY_LOG.unshift({id:'n'+Date.now()+Math.random().toString(36).slice(2,6),kind:kind,count:count,at:new Date().toISOString(),read:false});
   if(NOTIFY_LOG.length>5)NOTIFY_LOG=NOTIFY_LOG.slice(0,5);
   if(!silent){
@@ -502,8 +506,8 @@ function checkPendingCount(){
     // 以 id 判斷是否有「沒見過」的新項目（數量持平也抓得到）
     var hasNewBk=bks.some(function(x){return x&&x.id!=null&&!_seenSubIds[x.id];});
     var hasNewIn=ins.some(function(x){return x&&x.id!=null&&!_seenSubIds[x.id];});
-    bks.forEach(function(x){if(x&&x.id!=null)_seenSubIds[x.id]=1;});
-    ins.forEach(function(x){if(x&&x.id!=null)_seenSubIds[x.id]=1;});
+    // 重建為「目前仍待處理」的 id 集合（持久化後，重載不會把已看過的待匯入項目再次當成新項目），同時避免無限累積
+    var _ns={};bks.forEach(function(x){if(x&&x.id!=null)_ns[x.id]=1;});ins.forEach(function(x){if(x&&x.id!=null)_ns[x.id]=1;});_seenSubIds=_ns;
     // 首次（登入）以靜音方式提示，避免突然發聲；之後新進的會發聲＋閃爍
     if(hasNewBk&&bk>0)addNotify('bk',bk,first);
     if(hasNewIn&&intake>0)addNotify('intake',intake,first);
@@ -595,7 +599,7 @@ function openNotifyPanel(){
     +(NOTIFY_LOG.length?'<button class="btn ghost sm" onclick="markAllNotifyRead()">全部已讀</button><button class="btn ghost sm" onclick="clearNotifyLog()">清空</button>':'')
     +'</div>'
     +'<div class="row" style="gap:6px"><button class="btn gray sm" onclick="closeModal()">關閉</button>'
-    +(hasPending?'<button class="btn sm" onclick="pullSubmissions(false);markAllNotifyRead();setTimeout(function(){checkPendingCount();reloadNotify();},1200)">匯入全部</button>':'')
+    +(hasPending?'<button class="btn sm" onclick="pullSubmissions(false);markAllNotifyRead();setTimeout(function(){checkPendingCount();rebuildNotifyPanel();},1500)">匯入全部</button>':'')
     +'</div></div>');
 }
 // 共用同步流程：匯入 LIFF 線上預約／初診表填寫、同步 LINE 好友、更新通知；onStart/onDone 控制各自的 UI 呈現
@@ -699,7 +703,7 @@ function triggerGoogleLogin(){
 /* calcRetention 已移除：回流率與回流名單統一由 careStats() 計算（見「客戶回流」區段），避免重複邏輯 */
 /* ============ 手動備份 / 還原 ============ */
 function buildSnapshot(){
-  return {SERVICES:SERVICES,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,EMAIL_WHITELIST:EMAIL_WHITELIST,NOTIFY_LOG:NOTIFY_LOG,_backupAt:new Date().toISOString(),_version:1};
+  return {SERVICES:SERVICES,SVC_ID:SVC_ID,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,EMAIL_WHITELIST:EMAIL_WHITELIST,NOTIFY_LOG:NOTIFY_LOG,_seenSubIds:_seenSubIds,_lastSeen:_lastSeen,_backupAt:new Date().toISOString(),_version:1};
 }
 function doBackup(){
   try{
@@ -731,7 +735,7 @@ function confirmRestore(){
   if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可還原');return;}
   if(!RENDER_URL){showToast('未設定伺服器，無法還原');return;}
   showToast('還原中…');
-  fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);loadFromServer(function(){window._restoreSnap=null;go('dashboard');showToast('已從備份還原 ✓');});}).catch(function(e){showToast('還原失敗：'+e.message);});
+  fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);window._restoreSnap=null;_resetDone=true;/* 避免重新整理前的 saveAll 把舊記憶體寫回 */showToast('已從備份還原，重新載入中…');setTimeout(function(){location.reload();},700);}).catch(function(e){showToast('還原失敗：'+e.message);});
 }
 function backupCard(){
   var canRestore=currentUser&&currentUser.role==='admin';
@@ -745,7 +749,8 @@ views.dashboard=function(){
   var today=todayStr();
   var done=BOOKINGS.filter(function(b){return b.status==='completed';});
   var rev=PAYMENTS.reduce(function(a,p){return a+(p.amount||0);},0);
-  var stampBase=PAYMENTS.filter(function(p){return p.pay!=='transfer'&&p.pay!=='package';}).reduce(function(a,p){return a+(p.amount||0);},0);
+  /* 逐筆 floor 後加總，與「印花稅」頁逐列稅額相加一致 */
+  var stampTax=PAYMENTS.filter(function(p){return p.pay!=='transfer'&&p.pay!=='package';}).reduce(function(a,p){return a+Math.floor((p.amount||0)*0.004);},0);
   var todayBks=BOOKINGS.filter(function(b){return b.date===today;});
   var future=BOOKINGS.filter(function(b){return b.date>today&&b.status==='confirmed';});
   var tCount={};THERAPISTS.forEach(function(t){tCount[t.id]=done.filter(function(b){return b.t===t.id;}).length;});
@@ -768,7 +773,7 @@ views.dashboard=function(){
     '<div class="card"><div class="card-head"><h3>重點指標</h3><span class="tag '+(careCounts.m1>0?'amber':'mint')+'">需關心 '+careNeed+' 位</span></div><div class="card-body">'+
     '<div class="status-row"><b>回流率</b><span class="tag mint">'+cs.rate+'%</span></div>'+
     '<div class="status-row"><b>平均客單價</b><span class="tag mint">'+fmtNT(avg)+'</span></div>'+
-    '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(Math.floor(stampBase*0.004))+'</span></div>'+
+    '<div class="status-row"><b>應納印花稅</b><span class="tag amber">'+fmtNT(stampTax)+'</span></div>'+
     '<div class="sec-label" style="margin:14px 0 4px">需要關心的名單（依上次就診間隔，點擊查看）</div>'+
     careRows+
     '</div></div></div>'+backupCard()+resetServerCard());
@@ -856,6 +861,7 @@ function loadFromServer(cb){
   fetch(RENDER_URL+'/clinic-data').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(s){
     if(!s){if(cb)cb();return;}
     if(s.SERVICES){SERVICES.length=0;s.SERVICES.forEach(function(x){SERVICES.push(x);});}
+    if(s.SVC_ID)SVC_ID=s.SVC_ID;
     if(s.THERAPISTS)THERAPISTS=s.THERAPISTS;
     if(s.TC)Object.assign(TC,s.TC);if(s.TN)Object.assign(TN,s.TN);
     if(s.T_SVC_RATES)Object.assign(T_SVC_RATES,s.T_SVC_RATES);
@@ -870,9 +876,11 @@ function loadFromServer(cb){
     if(s.EDU_DATA)EDU_DATA=s.EDU_DATA;if(s.EDU_ID)EDU_ID=s.EDU_ID;if(s.EDU_CATS)EDU_CATS=s.EDU_CATS;if(s.EDU_SENT)Object.assign(EDU_SENT,s.EDU_SENT);
     if(s.CLINIC_INFO)Object.assign(CLINIC_INFO,s.CLINIC_INFO);
     if(s.STAMPS)Object.assign(STAMPS,s.STAMPS);if(s.STAMP_T)Object.assign(STAMP_T,s.STAMP_T);
-    if(s.CLINIC_LOGO)CLINIC_LOGO=s.CLINIC_LOGO;if(s.LOGIN_LOGO)LOGIN_LOGO=s.LOGIN_LOGO;if(s.REMINDER_TEMPLATE!=null)REMINDER_TEMPLATE=s.REMINDER_TEMPLATE;
+    if(s.CLINIC_LOGO!=null)CLINIC_LOGO=s.CLINIC_LOGO;if(s.LOGIN_LOGO!=null)LOGIN_LOGO=s.LOGIN_LOGO;if(s.REMINDER_TEMPLATE!=null)REMINDER_TEMPLATE=s.REMINDER_TEMPLATE;
     if(s.PUBLISHED_SVC_IDS!==undefined)PUBLISHED_SVC_IDS=s.PUBLISHED_SVC_IDS;if(s.PUBLISHED_PKG_IDS!==undefined)PUBLISHED_PKG_IDS=s.PUBLISHED_PKG_IDS;
     if(s.EMAIL_WHITELIST)Object.assign(EMAIL_WHITELIST,s.EMAIL_WHITELIST);
+    if(s._seenSubIds)Object.assign(_seenSubIds,s._seenSubIds);
+    if(s._lastSeen)Object.assign(_lastSeen,s._lastSeen);
     if(Array.isArray(s.NOTIFY_LOG))NOTIFY_LOG=s.NOTIFY_LOG.slice(0,5);
     if(typeof setFavicon==='function')setFavicon();
     if(cb)cb();
@@ -995,15 +1003,15 @@ function pullSubmissions(silent){
     var bks=(data&&data.bookings)||[];var ins=(data&&data.intakes)||[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
     var ackIds=[],newBkIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0;
-    ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;newIntake++;});
-    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}var _nbid=++BOOKING_ID;BOOKINGS.push({id:_nbid,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});newBkIds.push(_nbid);var existPt=getPatient(d.phone);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}newBk++;});
+    ins.forEach(function(it){var d=it.data||{};ackIds.push(it.id);if(!d.phone)return;INTAKE_DATA[d.phone]=d;var p=getPatient(d.phone)||(d.lineUserId?PATIENTS.find(function(x){return x.lineId===d.lineUserId;}):null);if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}else if(!p.phone){migratePatientKey(ptKey(p),d.phone);p.phone=d.phone;}p.name=d.name||p.name;p.dob=d.dob||p.dob;p.idNum=d.idNum||p.idNum;p.gender=d.gender||p.gender;if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;newIntake++;});
+    bks.forEach(function(bk){var d=bk.data||{};ackIds.push(bk.id);if(!d.phone||!d.date||!d.time)return;var hm=String(d.time).split(':');var startMin=Number(hm[0])*60+Number(hm[1]||0);var tid=d.t||(THERAPISTS[0]&&THERAPISTS[0].id);var _dur=svcOf(d.svc).dur||50;var _endMin=startMin+_dur;/* 與櫃台手動建立一致：超出 08:00–22:00、治療師休假、非班表時段、或時段衝突都不自動匯入 */if(startMin<480||_endMin>1320||isLeaveDay(tid,d.date)||!isWithinShift(tid,d.date,startMin,_dur)){skipBk++;return;}var confI=slotConflict(tid,d.date,startMin,d.svc||'');if(confI){skipBk++;return;}var _nbid=++BOOKING_ID;BOOKINGS.push({id:_nbid,name:d.name||'',phone:d.phone,t:tid,svc:d.svc||'',date:d.date,start:startMin,time:d.time,note:d.note||'線上預約',pay:'cash',status:'confirmed'});newBkIds.push(_nbid);var existPt=getPatient(d.phone)||(d.lineUserId?PATIENTS.find(function(x){return x.lineId===d.lineUserId;}):null);if(!existPt){existPt={phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(existPt);newPt++;}else{if(!existPt.phone){migratePatientKey(ptKey(existPt),d.phone);existPt.phone=d.phone;}if(d.lineUserId&&!existPt.lineId){existPt.lineId=d.lineUserId;existPt.line=true;if(d.linePictureUrl&&!existPt.avatar)existPt.avatar=d.linePictureUrl;}}newBk++;});
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
     if(parts.length){
       saveAll();
-      showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')+(skipBk?'（'+skipBk+' 筆因時段衝突未匯入）':''));
+      showToast((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')+(skipBk?'（'+skipBk+' 筆因時段衝突或非可預約時段未匯入）':''));
       if(_curView==='bookings')renderCal();else if(_curView==='patients'||_curView==='dashboard')go(_curView);
       syncManyToGCal(newBkIds);
-    }else if(skipBk){showToast(skipBk+' 筆預約因時段衝突未匯入，請至預約管理手動調整');
+    }else if(skipBk){showToast(skipBk+' 筆預約因時段衝突或非可預約時段未匯入，請至預約管理手動調整');
     }else if(!silent){showToast('沒有可匯入的資料');}
     if(ackIds.length){fetch(RENDER_URL+'/ack-submissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ackIds})}).catch(function(){});}
   }).catch(function(e){if(!silent)showToast('讀取失敗：'+e.message);});
@@ -1044,7 +1052,8 @@ function slotConflict(tid,date,startMin,svcId,excludeId){
     if(b.id===excludeId)return;
     if(b.t!==tid||b.date!==date)return;
     if(b.status==='cancelled'||b.status==='canceled')return;
-    if(GROUP_SVC_IDS.indexOf(b.svc)>-1)return;
+    /* 新預約若為團課，前面已 return null；走到這裡代表新預約是 1 對 1，
+       因此即使既有預約是團課（治療師正在上課）也算衝突，不可再排 1 對 1 */
     var bs=Number(b.start)||0;var be=bs+(svcOf(b.svc).dur||50);
     if(startMin<be&&bs<endMin)hit=b;
   });
@@ -1110,7 +1119,7 @@ function renderCal(){
   var cols=days.map(function(d){var ds=dstr(d);
     var inner='';
     for(var k=0;k<HRS;k++){var mm0=DAY_START+k*60;var working=leaveTs.some(function(t){return isWorkingSlot(t.id,ds,mm0);});var onLeave=schedAny&&!working;inner+='<div style="position:absolute;left:0;right:0;top:'+(k*HOUR_H)+'px;height:'+HOUR_H+'px;border-top:1px solid var(--line)'+(onLeave?';background:#fef2f2':'')+'"></div>';}
-    var evs=placeEvents(BOOKINGS.filter(function(b){return b.date===ds&&calActive(b.t);}).map(function(b){var dur=svcOf(b.svc).dur||30;return {b:b,start:b.start,end:b.start+dur};}));
+    var evs=placeEvents(BOOKINGS.filter(function(b){return b.date===ds&&calActive(b.t);}).map(function(b){var dur=svcOf(b.svc).dur||50;return {b:b,start:b.start,end:b.start+dur};}));
     evs.forEach(function(e){var b=e.b;var top=(e.start-DAY_START)/60*HOUR_H;var ht=Math.max((e.end-e.start)/60*HOUR_H-2,16);var w=100/e.cols;var left=e.col*w;var hh=Math.floor(b.start/60),mn=b.start%60;var c=tColor(b.t);var two=ht>=30;inner+='<div onclick="bkDetail('+b.id+')" title="'+esc(b.name)+' '+esc(svcOf(b.svc).name)+'" style="position:absolute;top:'+top+'px;height:'+ht+'px;left:calc('+left+'% + 1px);width:calc('+w+'% - 3px);background:'+c+'1f;border-left:3px solid '+c+';border-radius:4px;padding:2px 4px;cursor:pointer;overflow:hidden;box-shadow:0 1px 2px rgba(26,77,104,.08)"><div style="font-size:10px;font-weight:700;color:'+c+';line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+String(hh).padStart(2,'0')+':'+String(mn).padStart(2,'0')+' '+esc(b.name)+'</div>'+(two?'<div style="font-size:9px;color:var(--slate);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(svcOf(b.svc).name)+'</div>':'')+'</div>';});
     return '<div style="flex:1;position:relative;height:'+GRID_H+'px;border-left:1px solid var(--line)">'+inner+'</div>';
   }).join('');
@@ -1213,6 +1222,8 @@ function pickBkStatus(id,s){
 }
 function saveBk(id){
   var b=BOOKINGS.find(function(x){return x.id===id;});if(!b)return;
+  /* 先記下變更前的行事曆與事件，治療師（行事曆）改變時才能正確刪除/搬移舊事件 */
+  var oldCalId=calIdForBooking(b);var oldEvt=b.gcalEventId;
   var newT=document.getElementById('eb-t').value;var newDate=document.getElementById('eb-date').value||b.date;var newSvc=document.getElementById('eb-svc').value;var tv=document.getElementById('eb-time').value;var newStart=b.start;if(tv){var hm=tv.split(':');newStart=Number(hm[0])*60+Number(hm[1]);}
   if(isLeaveDay(newT,newDate)){showToast(tName(newT)+' 於 '+newDate+' 為休假日');return;}
   var dur=svcOf(newSvc).dur;var endMin=newStart+dur;
@@ -1224,11 +1235,15 @@ function saveBk(id){
   var newStatus=_pendingStatus[id];var statusChanged=newStatus&&newStatus!==b.status;var prev=b.status;
   if(statusChanged)b.status=newStatus;
   delete _pendingStatus[id];
+  var newCalId=calIdForBooking(b);var calChanged=(newCalId!==oldCalId);
   closeModal();renderCal();saveAll();
   if(statusChanged&&newStatus==='cancelled'&&prev!=='cancelled'){
-    if(b.gcalEventId){var evt=b.gcalEventId;b.gcalEventId=null;gcalDelete(evt,null,calIdForBooking(b));}
+    /* 用變更前的行事曆/事件刪除，避免在新治療師的行事曆上找不到而刪錯 */
+    if(oldEvt){b.gcalEventId=null;gcalDelete(oldEvt,null,oldCalId);}
     var p=getPatient(b.phone);if(p&&p.lineId){sendLineMsg(p.lineId,lineTemplates(b).cancel);showToast('已儲存並通知取消');}else{showToast('已儲存（已取消，病患未綁定 LINE）');}
   }else{
+    /* 若治療師（行事曆）改變，先移除舊行事曆上的事件並清掉 id，再由 syncOne 於新行事曆乾淨建立，避免孤兒事件 */
+    if(calChanged&&oldEvt){b.gcalEventId=null;gcalDelete(oldEvt,null,oldCalId);}
     showToast('已儲存');syncOne(id);
   }
 }
@@ -1298,8 +1313,10 @@ function doCheckout(id){
   function applyShockwave(){swDeducts.forEach(function(d){d.pkg.usedShots=(d.pkg.usedShots||0)+d.shots;var amt=Math.round(d.shots*(d.pkg.unitPrice||0));PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:'',svcName:'震波套票扣 '+d.shots.toLocaleString()+' 發（'+d.pkg.name+'）',amount:amt,pay:'package',shockwave:true,swPkgId:d.pkg.id,shotsUsed:d.shots,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:'',note:'震波發數扣除'});});}
   if(_coPay==='package'){var pkg=findUsablePkg(pkgKeyForBooking(b),b.svc);if(!pkg){showToast('找不到可使用的課程');return;}pkg.used++;var pkgFinal=Math.max(0,pkg.unitPrice-disc);b.status='completed';b.pay='package';b.transferLast5='';b.transferDate='';b.paidAmount=pkgFinal;PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name+'（課程扣抵）',amount:pkgFinal,pay:'package',pkgId:pkg.id,transferLast5:'',transferDate:'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:discNote});applyShockwave();closeModal();renderCal();saveAll();showToast('已使用課程 1 堂，剩餘 '+(pkg.total-pkg.used)+' 堂'+(disc?' (含減免 '+fmtNT(disc)+')':'')+swMsg);return;}
   if(_coPay==='transfer'){var last5=(document.getElementById('co-last5').value||'').trim();var tdate=document.getElementById('co-tdate').value;if(last5.length!==5){showToast('請輸入匯款後五碼');return;}if(!tdate){showToast('請選擇匯款日期');return;}b.transferLast5=last5;b.transferDate=tdate;}else{b.transferLast5='';b.transferDate='';}
+  /* 收據編號於結帳時產生一次並保存，預覽／列印／補印沿用同一編號，確保可對帳追溯 */
+  var receiptNo=genReceiptNo();b.receiptNo=receiptNo;
   var finalAmt=Math.max(0,sv0.price-disc);b.status='completed';b.pay=_coPay;b.paidAmount=finalAmt;
-  PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name,amount:finalAmt,pay:_coPay,transferLast5:b.transferLast5||'',transferDate:b.transferDate||'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:discNote});
+  PAYMENTS.push({id:++PAYMENT_ID,bookingId:b.id,phone:b.phone,name:b.name,t:b.t,svc:b.svc,svcName:sv0.name,amount:finalAmt,pay:_coPay,receiptNo:receiptNo,transferLast5:b.transferLast5||'',transferDate:b.transferDate||'',date:b.date,time:b.time||'',paidAt:new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16),discountNote:discNote,note:discNote});
   applyShockwave();
   var rc=document.getElementById('coRc').checked;var p=getPatient(b.phone)||{};var it=INTAKE_DATA[b.phone]||{};
   var dob=rc?(p.dob||it.dob||''):'';var idn=rc?(p.idNum||it.idNum||''):'';
@@ -1316,7 +1333,8 @@ function shockwaveUsageModal(ph,pid){
   var total=p.totalShots||0;var used=p.usedShots||0;var left=Math.max(0,total-used);
   var uses=PAYMENTS.filter(function(r){return r.shockwave&&r.swPkgId===pid;}).sort(function(a,b){return (a.paidAt||'').localeCompare(b.paidAt||'');});
   var loggedSum=uses.reduce(function(a,r){return a+(r.shotsUsed||0);},0);
-  var running=total;
+  /* 起算值補上「手動調整造成的差額」，使逐列遞減後最後一列剩餘收斂到真實剩餘（total-used） */
+  var running=total-used+loggedSum;
   var rows=uses.length?uses.map(function(r){running-=(r.shotsUsed||0);return '<tr><td><div>'+esc(r.date||'-')+'</div>'+(r.paidAt?'<div class="t-sub">'+esc(r.paidAt)+'</div>':'')+'</td><td>'+esc(tName(r.t))+'</td><td class="num" style="color:var(--danger);font-weight:700">-'+(r.shotsUsed||0).toLocaleString()+'</td><td class="num" style="font-weight:700">'+Math.max(0,running).toLocaleString()+'</td></tr>';}).join(''):'<tr><td colspan="4" class="empty">尚無使用紀錄，於結帳扣除發數後會自動記錄</td></tr>';
   var diffNote=(uses.length&&loggedSum!==used)?'<div class="banner info" style="margin-top:12px"><span>i</span><div>目前已用發數（'+used.toLocaleString()+'）與下方扣發紀錄合計（'+loggedSum.toLocaleString()+'）不一致，差額可能來自手動調整發數；上方剩餘發數為實際依據。</div></div>':'';
   modal('<div class="modal-head" style="background:var(--navy)">震波使用紀錄<button class="x" onclick="reopenPtPay(\''+ph+'\')">&times;</button></div>'+
@@ -1331,7 +1349,7 @@ function stampT(tid){if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="
 function receiptHTML(b,name,dob,idn){
   var sv=svcOf(b.svc);var pay=PAY_LABEL[b.pay]||'現金';var shown=(b.paidAmount!=null?b.paidAmount:sv.price);
   var headLogo=CLINIC_LOGO?'<img src="'+CLINIC_LOGO+'" style="max-width:220px;max-height:70px;object-fit:contain;margin:0 auto 4px;display:block">':'<div class="rc-clinic">'+esc(CLINIC_INFO.name)+'</div>';
-  return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+genReceiptNo()+'</div></div>'+
+  return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+esc(b.receiptNo||genReceiptNo())+'</div></div>'+
     '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+dob+'</span></div>':'')+(idn?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+esc(idn)+'</span></div>':'')+'</div>'+
     '<div class="rc-sect"><div class="rc-st">治療資訊</div><div class="rc-r"><span class="rc-k">治療師</span><span class="rc-v">'+esc(tName(b.t))+'</span></div><div class="rc-r"><span class="rc-k">日期時間</span><span class="rc-v">'+b.date+' '+b.time+'</span></div><div class="rc-r"><span class="rc-k">項目</span><span class="rc-v">'+esc(sv.name)+' ('+sv.dur+'分)</span></div><div class="rc-r"><span class="rc-k">付款方式</span><span class="rc-v">'+pay+'</span></div>'+(b.pay==='transfer'&&b.transferLast5?'<div class="rc-r"><span class="rc-k">匯款後五碼</span><span class="rc-v">'+esc(b.transferLast5)+'</span></div><div class="rc-r"><span class="rc-k">匯款日期</span><span class="rc-v">'+esc(b.transferDate||'')+'</span></div>':'')+'<div class="rc-total"><span>實收金額</span><span>'+fmtNT(shown)+'</span></div></div>'+
     '<div class="rc-stamps" style="align-items:center"><div class="rc-stamp">'+stampClinic()+'</div><div class="rc-stamp">'+stampOwner()+'</div><div class="rc-stamp">'+stampT(b.t)+'</div></div></div>';
@@ -1386,7 +1404,7 @@ views.patients=function(){
   var rows=PATIENTS.map(function(p){
     var key=ptKey(p);var it=INTAKE_DATA[key];var av=avatarEl(p.name,p.avatar,34);
     var phoneCell=p.phone?esc(p.phone):'<span class="tag amber">待補電話</span>';
-    return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+key+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+key+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+esc(p.name)+'\',\''+key+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+key+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+key+'\')">編輯</button></td></tr>';
+    return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+key+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+key+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+escJs(p.name)+'\',\''+key+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+key+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+key+'\')">編輯</button></td></tr>';
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
   return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
@@ -1420,9 +1438,24 @@ function ptPayPanel(ph){
   var payHtml=list.length?('<div class="banner info"><span>i</span><div>累計消費 '+list.length+' 筆，總金額 '+fmtNT(total)+'</div></div><table><thead><tr><th>日期</th><th>服務</th><th>付款</th><th>金額</th></tr></thead><tbody>'+list.map(function(r){return '<tr><td>'+esc(r.date)+'</td><td>'+esc(r.svcName)+'</td><td><span class="tag '+(r.pay==='transfer'?'amber':r.pay==='card'||r.pay==='package'?'mint':'gray')+'">'+(PAY_LABEL[r.pay]||r.pay)+'</span></td><td class="num" style="font-weight:700">'+fmtNT(r.amount)+'</td></tr>';}).join('')+'</tbody></table>'):'<div class="empty">尚無消費記錄</div>';
   return pkgPanelHTML(ph)+'<div style="height:1px;background:var(--line);margin:16px 0"></div><div class="sec-label">消費記錄</div>'+payHtml;
 }
+/* 病患 key（phone 或 pid）改變時，把所有以舊 key 索引的資料一併搬到新 key。
+   涵蓋預約、消費、病歷、初診、標籤、課程/套票、衛教傳送紀錄。供 savePt 與線上匯入採用同一電話時共用。 */
+function migratePatientKey(oldKey,newKey){
+  if(!oldKey||!newKey||oldKey===newKey)return;
+  BOOKINGS.forEach(function(b){if(b.phone===oldKey)b.phone=newKey;});
+  PAYMENTS.forEach(function(r){if(r.phone===oldKey)r.phone=newKey;});
+  SOAP_NOTES.forEach(function(n){if(n.phone===oldKey)n.phone=newKey;});
+  if(INTAKE_DATA[oldKey]){if(INTAKE_DATA[newKey]==null)INTAKE_DATA[newKey]=INTAKE_DATA[oldKey];delete INTAKE_DATA[oldKey];}
+  if(PT_TAG_DATA[oldKey]){if(PT_TAG_DATA[newKey]==null)PT_TAG_DATA[newKey]=PT_TAG_DATA[oldKey];delete PT_TAG_DATA[oldKey];}
+  if(PT_PACKAGES[oldKey]){if(PT_PACKAGES[newKey]==null)PT_PACKAGES[newKey]=PT_PACKAGES[oldKey];delete PT_PACKAGES[oldKey];}
+  Object.keys(EDU_SENT).forEach(function(eid){(EDU_SENT[eid]||[]).forEach(function(r){if(r.phone===oldKey)r.phone=newKey;});});
+}
 function savePt(ph){
   var p=getPatient(ph);if(!p)return;var oldPhone=p.phone;var newPhone=document.getElementById('pe-phone').value.trim();
-  if(newPhone&&newPhone!==oldPhone){var dup=PATIENTS.find(function(x){return x!==p&&x.phone===newPhone;});if(dup){showToast('此電話已被其他病患使用');return;}if(oldPhone){BOOKINGS.forEach(function(b){if(b.phone===oldPhone)b.phone=newPhone;});PAYMENTS.forEach(function(r){if(r.phone===oldPhone)r.phone=newPhone;});SOAP_NOTES.forEach(function(n){if(n.phone===oldPhone)n.phone=newPhone;});if(INTAKE_DATA[oldPhone]){INTAKE_DATA[newPhone]=INTAKE_DATA[oldPhone];delete INTAKE_DATA[oldPhone];}if(PT_TAG_DATA[oldPhone]){PT_TAG_DATA[newPhone]=PT_TAG_DATA[oldPhone];delete PT_TAG_DATA[oldPhone];}if(PT_PACKAGES[oldPhone]){PT_PACKAGES[newPhone]=PT_PACKAGES[oldPhone];delete PT_PACKAGES[oldPhone];}}p.phone=newPhone;}
+  if(newPhone&&newPhone!==oldPhone){var dup=PATIENTS.find(function(x){return x!==p&&x.phone===newPhone;});if(dup){showToast('此電話已被其他病患使用');return;}
+    /* 不能只在 oldPhone 有值時搬移：LINE/初診建立的病患原本以 pid 為 key，
+       首次補填電話時 key 會從 pid 變成電話，仍需把 pid 名下的資料搬過去，否則套票/病歷/標籤全部孤立 */
+    migratePatientKey(oldPhone||p.pid,newPhone);p.phone=newPhone;}
   p.name=document.getElementById('pe-name').value.trim()||p.name;p.dob=document.getElementById('pe-dob').value||p.dob;p.idNum=document.getElementById('pe-id').value||p.idNum;p.note=document.getElementById('pe-note').value||'';
   saveAll();closeModal();go('patients');showToast('已儲存');
 }
@@ -1590,11 +1623,11 @@ function anaAgg(period){
   var rows=PAYMENTS.filter(function(p){if(p.date<period.from||p.date>period.to)return false;if(_anaT!=='__all__'&&p.t!==_anaT)return false;return true;});
   var rev=rows.reduce(function(a,p){return a+(p.amount||0);},0);var count=rows.length;var custN=custTickets(rows);var avg=custN?Math.round(rev/custN):0;
   var svc={};rows.forEach(function(p){var k,nm;if(p.shockwave){k='__sw__';nm='震波套票（發數扣抵）';}else{k=p.svc||p.svcName;nm=p.svcName||svcOf(p.svc).name;}if(!svc[k])svc[k]={name:nm,count:0,rev:0};svc[k].count++;svc[k].rev+=(p.amount||0);});
-  var byT={};rows.forEach(function(p){if(!byT[p.t])byT[p.t]={count:0,rev:0};byT[p.t].count++;byT[p.t].rev+=(p.amount||0);});
+  var byT={};rows.forEach(function(p){if(!byT[p.t])byT[p.t]={count:0,rev:0};if(!p.shockwave)byT[p.t].count++;byT[p.t].rev+=(p.amount||0);});
   return {rev:rev,count:count,avg:avg,svc:svc,byT:byT};
 }
 function deltaTag(cur,prev){if(prev===0)return cur>0?'<span class="tag green">新增</span>':'<span class="tag gray">—</span>';var pct=Math.round((cur-prev)/prev*100);if(pct>0)return '<span class="tag green">▲ '+pct+'%</span>';if(pct<0)return '<span class="tag" style="background:#fdecec;color:#e05c5c">▼ '+Math.abs(pct)+'%</span>';return '<span class="tag gray">持平</span>';}
-function topClientsByTherapist(tid,from,to){var map={};PAYMENTS.filter(function(p){if(p.t!==tid)return false;if(from&&p.date<from)return false;if(to&&p.date>to)return false;return true;}).forEach(function(p){var k=p.phone||p.name;if(!map[k])map[k]={name:p.name,phone:p.phone,visits:0,amount:0};map[k].visits++;map[k].amount+=(p.amount||0);});return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return b.amount-a.amount||b.visits-a.visits;}).slice(0,10);}
+function topClientsByTherapist(tid,from,to){var map={};PAYMENTS.filter(function(p){if(p.t!==tid)return false;if(from&&p.date<from)return false;if(to&&p.date>to)return false;return true;}).forEach(function(p){var k=p.phone||p.name;if(!map[k])map[k]={name:p.name,phone:p.phone,visits:0,amount:0};if(!p.shockwave)map[k].visits++;map[k].amount+=(p.amount||0);});return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return b.amount-a.amount||b.visits-a.visits;}).slice(0,10);}
 function setTopT(tid){_topT=tid;go('analytics');}
 function topClientsCard(period){
   if(!THERAPISTS.length)return '';
@@ -1638,7 +1671,7 @@ views.payments=function(){
     '<div class="card"><div class="card-head" style="gap:10px"><div class="row" style="gap:6px">'+pills+'</div><div class="row" style="gap:8px;flex-wrap:wrap"><div class="row" style="gap:5px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">每日</span><input type="date" value="'+esc(_payFilter.date)+'" onchange="setPayDate(this.value)" class="'+(_payFilter.date?'':'date-empty')+'" data-ph="選擇日期" style="padding:8px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+(_payFilter.date?'<button class="btn sm gray" onclick="clearPayDate()">清除</button>':'')+'</div><div class="search-wrap"><input id="payq" placeholder="搜尋姓名或電話" oninput="filterPayRows(this.value)"><button class="s-clear" onclick="document.getElementById(\'payq\').value=\'\';filterPayRows(\'\')">&times;</button></div></div></div>'+
     '<div class="card-body flush"><table><thead><tr><th>病患</th><th>服務</th><th>治療師</th><th>付款方式</th><th>金額</th><th>備註</th><th>結帳時間</th><th></th></tr></thead><tbody id="payBody">'+rows+'</tbody></table>'+(list.length?'':'<div class="empty">尚無消費記錄，結帳完成後會自動產生。</div>')+'</div></div>');
 };
-function reprintReceipt(bookingId){var b=BOOKINGS.find(function(x){return x.id===bookingId;});var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:pay.time||'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate,paidAmount:pay.amount};else{showToast('找不到記錄');return;}}var p=getPatient(b.phone)||{};if(pay)b.paidAmount=pay.amount;showReceipt(b,b.name,p.dob||'',p.idNum||'');}
+function reprintReceipt(bookingId){var b=BOOKINGS.find(function(x){return x.id===bookingId;});var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:pay.time||'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate,paidAmount:pay.amount,receiptNo:pay.receiptNo};else{showToast('找不到記錄');return;}}/* 沿用結帳當下的收據編號；舊資料若無編號則補產生一次並保存，之後補印維持一致 */if(pay){if(!pay.receiptNo){pay.receiptNo=genReceiptNo();saveAll();}b.receiptNo=pay.receiptNo;}var p=getPatient(b.phone)||{};if(pay)b.paidAmount=pay.amount;showReceipt(b,b.name,p.dob||'',p.idNum||'');}
 function voidPayment(pid){var r=PAYMENTS.find(function(x){return x.id===pid;});if(!r)return;var vnote=r.shockwave?'作廢後自營收與印花稅扣除；扣除的震波發數會加回套票。':'作廢後自營收與印花稅扣除；對應預約會還原為「已確認」。';modal('<div class="modal-head" style="background:var(--danger)">作廢消費記錄<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px;line-height:1.9">確定作廢這筆收款？<br><b>'+esc(r.name)+'</b>　'+esc(r.svcName)+'　'+fmtNT(r.amount)+'<br><span style="font-size:12px;color:var(--slate)">'+vnote+'</span></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmVoidPayment('+pid+')">確定作廢</button></div>');}
 function confirmVoidPayment(pid){var i=PAYMENTS.findIndex(function(x){return x.id===pid;});if(i>-1){var r=PAYMENTS[i];var b=BOOKINGS.find(function(x){return x.id===r.bookingId;});if(r.shockwave){var spk=getPkgs(r.phone).find(function(x){return x.id===r.swPkgId;});if(spk)spk.usedShots=Math.max(0,(spk.usedShots||0)-(r.shotsUsed||0));}else{if(b&&b.status==='completed'){b.status='confirmed';b.transferLast5='';b.transferDate='';}if(r.pay==='package'){var pk=getPkgs(r.phone).find(function(x){return x.id===r.pkgId;});if(pk&&pk.used>0)pk.used--;}}PAYMENTS.splice(i,1);}closeModal();go('payments');showToast('已作廢');saveAll();}
 
@@ -1663,7 +1696,7 @@ function doPayrollExport(){
 
 /* ============ 印花稅 ============ */
 views.stamptax=function(){
-  var taxable=PAYMENTS.filter(function(p){return p.pay!=='transfer'&&p.pay!=='package';});var total=Math.floor(taxable.reduce(function(a,p){return a+(p.amount||0);},0)*0.004);
+  var taxable=PAYMENTS.filter(function(p){return p.pay!=='transfer'&&p.pay!=='package';});/* 逐筆 floor 後加總，使表頭總額與下方逐列稅額相加一致 */var total=taxable.reduce(function(a,p){return a+Math.floor((p.amount||0)*0.004);},0);
   var rows=taxable.map(function(p){return '<tr><td class="t-name">'+esc(p.name)+'</td><td>'+esc(p.date)+'</td><td>'+esc(p.svcName)+'</td><td class="num">'+fmtNT(p.amount)+'</td><td class="num">'+fmtNT(Math.floor((p.amount||0)*0.004))+'</td></tr>';}).join('');
   return shell('stamptax','印花稅','<div class="stat-grid"><div class="stat-card"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">應納印花稅</div></div><div class="stat-card"><div class="sc-n">'+taxable.length+'</div><div class="sc-l">應稅筆數</div></div></div><div class="card"><div class="card-body flush"><table><thead><tr><th>個案</th><th>日期</th><th>服務</th><th>金額</th><th>稅額</th></tr></thead><tbody>'+rows+'</tbody></table>'+(taxable.length?'':'<div class="empty">尚無應稅資料</div>')+'</div></div><div class="banner info"><span>i</span><div>稅額以實際收款金額 0.4% 計（匯款、課程扣抵不計），資料來源為消費記錄。</div></div>');
 };
@@ -1821,7 +1854,7 @@ function svcCheckboxes(domId,selected){selected=selected||[];return '<div id="'+
 function collectSvcChecks(domId){var out=[];var w=document.getElementById(domId);if(w)w.querySelectorAll('.svc-chk:checked').forEach(function(c){out.push(c.value);});return out;}
 function addPkgModal(){if(!SERVICES.length){showToast('請先建立服務項目');return;}modal('<div class="modal-head" style="background:var(--navy)">新增課程<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>課程名稱</label><input id="pk-name" placeholder="例：紅繩五堂套餐"></div><div class="field"><label>適用服務（可複選）</label>'+svcCheckboxes('pk-svcs',[])+'</div><div class="grid2"><div class="field"><label>堂數</label><input id="pk-ses" type="number" value="5" min="1"></div><div class="field"><label>售價 (NT$)</label><input id="pk-price" type="number" value="7000" min="0"></div></div><div class="field"><label>說明</label><input id="pk-desc" placeholder="優惠說明"></div><div class="field"><label>由哪些治療師提供</label>'+therapistChecks('pk-ts',[])+'</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitPkg()">新增</button></div>');}
 function submitPkg(){var name=document.getElementById('pk-name').value.trim();if(!name){showToast('請填寫課程名稱');return;}var svcs=collectSvcChecks('pk-svcs');if(!svcs.length){showToast('請至少選一個適用服務');return;}PACKAGES.push({id:++PKG_ID,name:name,svcs:svcs,sessions:Number(document.getElementById('pk-ses').value)||1,price:Number(document.getElementById('pk-price').value)||0,desc:document.getElementById('pk-desc').value||'',ts:collectTherapistChecks('pk-ts')});closeModal();go('packages');showToast('課程已新增');}
-function editPkgModal(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">編輯課程<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>課程名稱</label><input id="pke-name" value="'+esc(p.name)+'"></div><label class="row" style="font-size:13px;gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mint-l);border:1px solid var(--mint);border-radius:8px"><input type="checkbox" id="pke-any" '+(p.anySvc?'checked':'')+' style="width:auto" onchange="document.getElementById(\'pke-svcs-wrap\').style.display=this.checked?\'none\':\'block\'"> <b>不限服務扣抵</b>（勾選後此套票可扣抵任何服務項目）</label><div id="pke-svcs-wrap" style="display:'+(p.anySvc?'none':'block')+'"><div class="field"><label>適用服務（可複選）</label>'+svcCheckboxes('pke-svcs',pkgSvcs(p))+'</div></div><div class="grid2"><div class="field"><label>堂數</label><input id="pke-ses" type="number" value="'+p.sessions+'"></div><div class="field"><label>售價</label><input id="pke-price" type="number" value="'+p.price+'"></div></div><div class="field"><label>說明</label><input id="pke-desc" value="'+esc(p.desc)+'"></div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="delPkg('+id+')">刪除</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="savePkg('+id+')">儲存</button></div></div>');}
+function editPkgModal(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">編輯課程<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>課程名稱</label><input id="pke-name" value="'+esc(p.name)+'"></div><label class="row" style="font-size:13px;gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mint-l);border:1px solid var(--mint);border-radius:8px"><input type="checkbox" id="pke-any" '+(p.anySvc?'checked':'')+' style="width:auto" onchange="document.getElementById(\'pke-svcs-wrap\').style.display=this.checked?\'none\':\'block\'"> <b>不限服務扣抵</b>（勾選後此套票可扣抵任何服務項目）</label><div id="pke-svcs-wrap" style="display:'+(p.anySvc?'none':'block')+'"><div class="field"><label>適用服務（可複選）</label>'+svcCheckboxes('pke-svcs',pkgSvcs(p))+'</div></div><div class="grid2"><div class="field"><label>堂數</label><input id="pke-ses" type="number" value="'+p.sessions+'"></div><div class="field"><label>售價</label><input id="pke-price" type="number" value="'+p.price+'"></div></div><div class="field"><label>說明</label><input id="pke-desc" value="'+esc(p.desc)+'"></div><div class="field"><label>由哪些治療師提供</label>'+therapistChecks('pke-ts',p.ts||[])+'</div></div><div class="modal-foot" style="justify-content:space-between"><button class="btn danger sm" onclick="delPkg('+id+')">刪除</button><div class="row" style="gap:6px"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="savePkg('+id+')">儲存</button></div></div>');}
 function savePkg(id){var p=PACKAGES.find(function(x){return x.id===id;});if(!p)return;p.name=document.getElementById('pke-name').value.trim()||p.name;var anySvc=document.getElementById('pke-any').checked;p.anySvc=anySvc;if(anySvc){p.svcs=p.svcs&&p.svcs.length?p.svcs:[];}else{var svcs=collectSvcChecks('pke-svcs');if(!svcs.length){showToast('請至少選一個適用服務，或勾選「不限服務扣抵」');return;}p.svcs=svcs;}delete p.svc;p.sessions=Number(document.getElementById('pke-ses').value)||p.sessions;p.price=Number(document.getElementById('pke-price').value)||p.price;p.desc=document.getElementById('pke-desc').value||'';p.ts=collectTherapistChecks('pke-ts');closeModal();go('packages');showToast('已儲存');}
 function delPkg(id){var i=PACKAGES.findIndex(function(x){return x.id===id;});if(i>-1)PACKAGES.splice(i,1);closeModal();go('packages');showToast('已刪除');}
 
@@ -1917,8 +1950,13 @@ function setStaffRole(email,role){var s=EMAIL_WHITELIST[email];if(!s)return;var 
 function unlinkStaffEdit(email,tid){var s=EMAIL_WHITELIST[email];if(!s)return;var admins=Object.keys(EMAIL_WHITELIST).filter(function(e){return EMAIL_WHITELIST[e].role==='admin';});if(s.role==='admin'&&admins.length<=1){showToast('至少需保留一位管理員');return;}delete EMAIL_WHITELIST[email];tEditModal(tid,'account');showToast('已移除帳號');saveAll();}
 function addTModal(){modal('<div class="modal-head" style="background:var(--navy)">新增治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="grid2"><div class="field"><label>姓名</label><input id="nt-name"></div><div class="field"><label>職稱</label><input id="nt-title" value="物理治療師"></div></div><div class="field"><label>代表色</label><input id="nt-color" type="color" value="'+COLORS[THERAPISTS.length%COLORS.length]+'" style="width:60px;height:36px"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitT()">新增</button></div>');}
 function submitT(){var name=document.getElementById('nt-name').value.trim();if(!name){showToast('請填寫姓名');return;}var id='T'+Date.now();THERAPISTS.push({id:id,name:name,title:document.getElementById('nt-title').value||'物理治療師',base:0,rate:0,workDays:[],week:{},leaves:[]});TN[id]=name;TC[id]=document.getElementById('nt-color').value;closeModal();go('clinic');showToast('治療師已新增');}
-function delT(tid){if(THERAPISTS.length<=1){showToast('至少需保留一位治療師');return;}modal('<div class="modal-head" style="background:var(--danger)">刪除治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此治療師？相關預約紀錄不受影響。</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn danger" onclick="confirmDelT(\''+tid+'\')">確定刪除</button></div>');}
-function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;closeModal();go('clinic');showToast('已刪除');}
+function delT(tid){if(THERAPISTS.length<=1){showToast('至少需保留一位治療師');return;}
+  /* 若此治療師綁定了帳號且其中含唯一的管理員，刪除會連同清掉白名單而失去管理員，先擋下 */
+  var linkedAdmins=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].therapistId===tid&&EMAIL_WHITELIST[em].role==='admin';});
+  var totalAdmins=Object.keys(EMAIL_WHITELIST).filter(function(em){return EMAIL_WHITELIST[em].role==='admin';}).length;
+  if(linkedAdmins.length&&totalAdmins-linkedAdmins.length<1){showToast('此治療師綁定了唯一的管理員帳號，請先把該帳號改綁其他治療師再刪除');return;}
+  modal('<div class="modal-head" style="background:var(--danger)">刪除治療師<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此治療師？相關預約紀錄不受影響。'+(linkedAdmins.length||Object.keys(EMAIL_WHITELIST).some(function(em){return EMAIL_WHITELIST[em].therapistId===tid;})?'<br><span style="color:var(--slate);font-size:12px">綁定到此治療師的登入帳號也會一併移除。</span>':'')+'</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal();go(\'clinic\')">取消</button><button class="btn danger" onclick="confirmDelT(\''+tid+'\')">確定刪除</button></div>');}
+function confirmDelT(tid){var i=THERAPISTS.findIndex(function(x){return x.id===tid;});if(i>-1)THERAPISTS.splice(i,1);/* 清掉指向已刪治療師的白名單帳號，避免殘留 therapistId 指向不存在的治療師 */Object.keys(EMAIL_WHITELIST).forEach(function(em){if(EMAIL_WHITELIST[em].therapistId===tid)delete EMAIL_WHITELIST[em];});if(schedT===tid&&THERAPISTS[0])schedT=THERAPISTS[0].id;closeModal();go('clinic');saveAll();showToast('已刪除');}
 function moveTherapist(tid,dir){var i=THERAPISTS.findIndex(function(t){return t.id===tid;});if(i<0)return;var j=i+dir;if(j<0||j>=THERAPISTS.length)return;var tmp=THERAPISTS[i];THERAPISTS[i]=THERAPISTS[j];THERAPISTS[j]=tmp;saveAll();go('clinic');showToast('順序已更新');}
 // 一鍵把伺服器上的名單套成標準三位；以「連結的 Gmail」對應現有治療師，保留既有 id 與歷史資料
 function standardRosterModal(){
