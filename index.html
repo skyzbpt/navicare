@@ -364,7 +364,20 @@ function tName(id){return TN[id]||id;}
 function tColor(id){return TC[id]||'#1a4d68';}
 function getPatient(key){return PATIENTS.find(function(p){return (p.phone&&p.phone===key)||(p.pid&&p.pid===key);});}
 function ptKey(p){return p.phone||p.pid||'';}
-function modal(h){document.getElementById('modalBox').innerHTML=h;document.getElementById('modalBg').classList.add('show');}
+/* HTML 消毒：移除 script/iframe 等危險標籤及 javascript: URI；保留 onclick 等應用內合法事件屬性 */
+function sanitizeHTML(h){
+  try{
+    var doc=(new DOMParser()).parseFromString('<body>'+h+'</body>','text/html');
+    doc.querySelectorAll('script,iframe,object,embed,base,link,meta,noscript,template').forEach(function(el){if(el.parentNode)el.parentNode.removeChild(el);});
+    var blockAttr=['onerror','onload','onsuspend','onplay','onpause','onreset','onfocus','onblur','onmouseenter','onmouseleave','onmouseover','onmouseout','onmousemove','ontouchstart','ontouchmove','ontouchend','onunload','onbeforeunload','ondblclick','oncontextmenu','onpointerover','onpointerenter','onpointerdown'];
+    doc.querySelectorAll('*').forEach(function(el){
+      blockAttr.forEach(function(a){if(el.hasAttribute(a))el.removeAttribute(a);});
+      ['href','src','action','formaction'].forEach(function(a){var v=el.getAttribute(a)||'';if(/^\s*javascript\s*:/i.test(v))el.removeAttribute(a);});
+    });
+    return doc.body.innerHTML;
+  }catch(e){return h;}
+}
+function modal(h){document.getElementById('modalBox').innerHTML=sanitizeHTML(h);document.getElementById('modalBg').classList.add('show');}
 function closeModal(){document.getElementById('modalBg').classList.remove('show');}
 function showToast(m){var t=document.getElementById('sToast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2200);}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -718,6 +731,52 @@ function doBackup(){
     showToast('備份檔已下載');
   }catch(e){showToast('備份失敗：'+e.message);}
 }
+/* 加密備份：PBKDF2（200,000 次 SHA-256）衍生 AES-256-GCM 金鑰；格式：NCEK(4)|ver(1)|salt(16)|iv(12)|ciphertext */
+function doBackupEncrypted(){
+  var pw=(prompt('設定備份密碼（還原時需要同一密碼，請妥善保管）')||'').trim();
+  if(!pw)return;
+  if(pw.length<6){showToast('密碼至少需 6 個字元');return;}
+  var pw2=(prompt('再次輸入密碼確認')||'').trim();
+  if(pw!==pw2){showToast('兩次密碼不一致，已取消');return;}
+  var data=new TextEncoder().encode(JSON.stringify(buildSnapshot()));
+  var salt=crypto.getRandomValues(new Uint8Array(16));
+  var iv=crypto.getRandomValues(new Uint8Array(12));
+  crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveKey'])
+  .then(function(km){return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt']);})
+  .then(function(key){return crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,data);})
+  .then(function(cipher){
+    var out=new Uint8Array(4+1+16+12+cipher.byteLength);
+    var off=0;[0x4E,0x43,0x45,0x4B].forEach(function(b){out[off++]=b;});out[off++]=1;
+    out.set(salt,off);off+=16;out.set(iv,off);off+=12;out.set(new Uint8Array(cipher),off);
+    var d=new Date();var stamp=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'-'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0');
+    var blob=new Blob([out],{type:'application/octet-stream'});var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download='領航備份-'+stamp+'.ncek';document.body.appendChild(a);a.click();
+    setTimeout(function(){if(a.parentNode)a.parentNode.removeChild(a);URL.revokeObjectURL(url);},2000);
+    showToast('加密備份已下載 ✓');
+  }).catch(function(e){showToast('加密失敗：'+e.message);});
+}
+function _decryptBackupBuf(buf,pw){
+  var bytes=new Uint8Array(buf);
+  if(bytes.length<34||bytes[0]!==0x4E||bytes[1]!==0x43||bytes[2]!==0x45||bytes[3]!==0x4B)return Promise.reject(new Error('非加密備份格式'));
+  var salt=bytes.slice(5,21),iv=bytes.slice(21,33),cipher=bytes.slice(33);
+  return crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveKey'])
+  .then(function(km){return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);})
+  .then(function(key){return crypto.subtle.decrypt({name:'AES-GCM',iv:iv},key,cipher);})
+  .then(function(plain){return JSON.parse(new TextDecoder().decode(plain));});
+}
+function restoreEncryptedBackup(input){
+  var file=input&&input.files&&input.files[0];if(!file)return;
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可還原');input.value='';return;}
+  var pw=(prompt('請輸入備份密碼')||'').trim();
+  if(!pw){input.value='';return;}
+  file.arrayBuffer().then(function(buf){return _decryptBackupBuf(buf,pw);}).then(function(s){
+    if(!s||typeof s!=='object'){showToast('備份資料格式異常');return;}
+    window._restoreSnap=s;
+    var info=[];if(s.PATIENTS)info.push('病患 '+s.PATIENTS.length+' 位');if(s.BOOKINGS)info.push('預約 '+s.BOOKINGS.length+' 筆');if(s.SOAP_NOTES)info.push('病歷 '+s.SOAP_NOTES.length+' 份');if(s.PAYMENTS)info.push('消費 '+s.PAYMENTS.length+' 筆');
+    var when=s._backupAt?('<div class="t-sub" style="margin-top:8px">備份時間：'+esc(new Date(s._backupAt).toLocaleString('zh-TW',{hour12:false}))+'</div>'):'';
+    modal('<div class="modal-head" style="background:var(--warn)">確認還原加密備份<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="banner" style="background:#fdf3e0;border:1px solid #f0d090;color:#8a5a12"><span>!</span><div>還原會用這個備份檔<b>覆蓋目前所有資料</b>，目前尚未備份的變更將遺失且無法復原。</div></div><div style="font-size:13px;line-height:1.9">備份內容：'+esc(info.join('、')||'（無法判讀筆數）')+when+'</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" style="background:var(--warn)" onclick="confirmRestore()">確認還原並覆蓋</button></div>');
+  }).catch(function(){showToast('解密失敗，密碼可能有誤或非加密備份格式');}).finally(function(){input.value='';});
+}
 function restoreBackup(input){
   var file=input.files&&input.files[0];if(!file)return;
   if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可還原');input.value='';return;}
@@ -744,8 +803,9 @@ function backupCard(){
   var canRestore=currentUser&&currentUser.role==='admin';
   var dlIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   var upIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
-  var restoreBtn=canRestore?'<label class="btn gray" style="cursor:pointer;font-family:inherit">'+upIcon+'從備份還原<input type="file" accept="application/json,.json" style="display:none" onchange="restoreBackup(this)"></label>':'';
-  return '<div class="card"><div class="card-head"><h3>資料備份</h3><span class="tag mint">手動</span></div><div class="card-body"><div class="banner info"><span>i</span><div>下載備份會把所有預約、病患、病歷、消費與設定打包成一個 JSON 檔存到你的裝置。建議定期備份，尤其在重新部署伺服器之前。'+(canRestore?'還原會以備份檔覆蓋目前全部資料。':'')+'</div></div><div class="row" style="gap:8px"><button class="btn" onclick="doBackup()">'+dlIcon+'下載備份檔</button>'+restoreBtn+'</div></div></div>';
+  var lockIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+  var restoreBtn=canRestore?'<label class="btn gray" style="cursor:pointer;font-family:inherit">'+upIcon+'還原明文備份（.json）<input type="file" accept="application/json,.json" style="display:none" onchange="restoreBackup(this)"></label><label class="btn gray" style="cursor:pointer;font-family:inherit">'+lockIcon+'還原加密備份（.ncek）<input type="file" accept=".ncek" style="display:none" onchange="restoreEncryptedBackup(this)"></label>':'';
+  return '<div class="card"><div class="card-head"><h3>資料備份</h3><span class="tag mint">手動</span></div><div class="card-body"><div class="banner info"><span>i</span><div>下載備份會把所有預約、病患、病歷、消費與設定打包成一個檔案存到你的裝置。建議定期備份，尤其在重新部署伺服器之前。<b>加密備份</b>（.ncek）使用 AES-256-GCM 加密，需設定密碼，更安全。'+(canRestore?'還原會以備份檔覆蓋目前全部資料。':'')+'</div></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost" onclick="doBackup()">'+dlIcon+'明文備份（.json）</button><button class="btn" onclick="doBackupEncrypted()">'+lockIcon+'加密備份（.ncek）</button></div>'+(canRestore?'<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">'+restoreBtn+'</div>':'')+'</div></div>';
 }
 
 views.dashboard=function(){
