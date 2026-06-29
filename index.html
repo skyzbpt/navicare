@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://line-webhook-x1ux.onrender.com https://www.googleapis.com https://accounts.google.com; img-src 'self' data: blob: https://*.line-scdn.net https://*.line-apps.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none';">
 <title>領航物理治療所 管理系統</title>
 <link rel="icon" type="image/svg+xml" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a4d68'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/></g></svg>">
 <style>
@@ -370,7 +371,7 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 /* 供 inline onclick="fn('VALUE')" 使用：先跳脫反斜線與單引號（JS 字串），再做 HTML 跳脫，避免姓名/備註含 ' 破壞處理函式 */
 function escJs(s){return esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));}
 function todayStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function genReceiptNo(){var n=new Date();return 'RC-'+n.getFullYear()+String(n.getMonth()+1).padStart(2,'0')+String(n.getDate()).padStart(2,'0')+'-'+String(Math.floor(Math.random()*9000)+1000);}
+function genReceiptNo(){var n=new Date();var arr=new Uint32Array(1);crypto.getRandomValues(arr);return 'RC-'+n.getFullYear()+String(n.getMonth()+1).padStart(2,'0')+String(n.getDate()).padStart(2,'0')+'-'+String(1000+(arr[0]%9000));}
 function getRate(tid,svcId){var r=(T_SVC_RATES[tid]||{})[svcId];return r!=null?r:0;}
 /* 課程方案適用服務（相容舊 svc 單值與新 svcs 陣列）*/
 function pkgSvcs(p){if(p.svcs&&p.svcs.length)return p.svcs;if(p.svc)return [p.svc];return [];}
@@ -526,8 +527,8 @@ var _notifyFirstRun=true;
 function startNotifyPolling(){
   // 預先建立／喚醒音訊（瀏覽器需使用者互動後才能播放，登入動作已滿足）
   try{var AC=window.AudioContext||window.webkitAudioContext;if(AC&&!_audioCtx)_audioCtx=new AC();if(_audioCtx&&_audioCtx.state==='suspended')_audioCtx.resume();}catch(e){}
-  // 徵詢瀏覽器通知權限（背景分頁也能彈出通知）
-  try{if(window.Notification&&Notification.permission==='default')Notification.requestPermission();}catch(e){}
+  // 徵詢瀏覽器通知權限（延遲 3 秒讓畫面穩定再請求，確保使用者已完成互動操作）
+  try{if(window.Notification&&Notification.permission==='default')setTimeout(function(){Notification.requestPermission();},3000);}catch(e){}
   _notifyFirstRun=true; // 首次檢查不發聲（避免登入就響），但仍會把待匯入項目記成通知
   checkPendingCount();
   if(_notifyTimer)clearInterval(_notifyTimer);
@@ -562,6 +563,8 @@ function clearNotifyLog(){
   if(typeof saveAll==='function')saveAll();
 }
 function notifyRowHTML(n){
+  var VALID_KINDS=['care','bk','intake'];
+  if(VALID_KINDS.indexOf(n.kind)===-1)return '';
   var info;
   if(n.kind==='care')info={icon:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e05c5c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>',bg:'#fef2f2',title:'需要關心的名單',desc:n.count+' 位個案超過一個月未回診'};
   else if(n.kind==='bk')info={icon:'📅',bg:'var(--mint-l,#edfaf6)',title:'線上預約',desc:n.count+' 筆待匯入'};
@@ -702,7 +705,8 @@ function triggerGoogleLogin(){
 /* calcRetention 已移除：回流率與回流名單統一由 careStats() 計算（見「客戶回流」區段），避免重複邏輯 */
 /* ============ 手動備份 / 還原 ============ */
 function buildSnapshot(){
-  return {SERVICES:SERVICES,SVC_ID:SVC_ID,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,EMAIL_WHITELIST:EMAIL_WHITELIST,NOTIFY_LOG:NOTIFY_LOG,_seenSubIds:_seenSubIds,_lastSeen:_lastSeen,_backupAt:new Date().toISOString(),_version:1};
+  /* EMAIL_WHITELIST 刻意排除：白名單屬伺服器端存取控制設定，不應寫入可下載的備份檔 */
+  return {SERVICES:SERVICES,SVC_ID:SVC_ID,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,NOTIFY_LOG:NOTIFY_LOG,_seenSubIds:_seenSubIds,_lastSeen:_lastSeen,_backupAt:new Date().toISOString(),_version:1};
 }
 function doBackup(){
   try{
@@ -777,8 +781,7 @@ views.dashboard=function(){
     careRows+
     '</div></div></div>'+backupCard()+resetServerCard());
 };
-/* ============ 重置伺服器資料（換版用，需密碼 dogma）============ */
-var RESET_PASSWORD='dogma';
+/* ============ 重置伺服器資料（換版用，僅管理員）============ */
 function resetServerCard(){
   if(!(currentUser&&currentUser.role==='admin'))return '';
   var warnIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
@@ -788,15 +791,12 @@ function resetServerModal(){
   if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可執行');return;}
   modal('<div class="modal-head" style="background:var(--danger)">重置伺服器資料<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body"><div class="banner" style="background:#fdecec;border:1px solid #f5b5b5;color:#b02525"><span>!</span><div>確認後將<b>立即清空伺服器上的所有資料</b>並還原成內建預設，<b>無法復原</b>。<br>清空後請<b>直接關閉分頁、重新部署最新版並重新登入</b>，切勿再點任何按鈕（會把空資料寫回，但也可能覆蓋你想保留的東西）。</div></div>'+
-    '<div class="field" style="margin-top:14px"><label>請輸入管理密碼以確認</label><input id="resetPw" type="password" placeholder="輸入密碼" autocomplete="off" onkeydown="if(event.key===\'Enter\')confirmResetServer()"></div>'+
-    '<label class="row" style="font-size:13px;gap:8px;margin-top:4px;color:var(--danger)"><input type="checkbox" id="resetAck" style="width:auto"> 我已下載備份，了解此操作無法復原</label>'+
+    '<label class="row" style="font-size:13px;gap:8px;margin-top:14px;color:var(--danger)"><input type="checkbox" id="resetAck" style="width:auto"> 我已下載備份，了解此操作無法復原</label>'+
     '</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmResetServer()">確認清空</button></div>');
-  setTimeout(function(){var el=document.getElementById('resetPw');if(el)el.focus();},100);
 }
 function confirmResetServer(){
-  var pw=(document.getElementById('resetPw')||{}).value||'';
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可執行');return;}
   var ack=document.getElementById('resetAck')&&document.getElementById('resetAck').checked;
-  if(pw!==RESET_PASSWORD){showToast('密碼錯誤');return;}
   if(!ack){showToast('請先勾選確認項目');return;}
   if(!RENDER_URL){showToast('未設定伺服器，無法重置');return;}
   showToast('清空中…');
@@ -812,7 +812,7 @@ function setFavicon(){
   try{
     var link=document.getElementById('favicon');
     if(!link){link=document.createElement('link');link.rel='icon';link.id='favicon';document.head.appendChild(link);}
-    if(LOGIN_LOGO){link.removeAttribute('type');link.href=LOGIN_LOGO;return;}
+    if(LOGIN_LOGO&&/^data:image\/(png|jpeg|gif|webp|svg\+xml|x-icon);base64,/i.test(LOGIN_LOGO)){link.removeAttribute('type');link.href=LOGIN_LOGO;return;}
     var svg="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='#1a4d68'/><g transform='translate(4 4)' fill='none' stroke='#fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/></g></svg>";
     link.type='image/svg+xml';link.href='data:image/svg+xml,'+encodeURIComponent(svg);
   }catch(e){}
@@ -1345,22 +1345,23 @@ function stampClinic(){if(STAMPS.clinic)return '<img src="'+STAMPS.clinic+'" sty
 function stampOwner(){if(STAMPS.owner)return '<img src="'+STAMPS.owner+'" style="width:84px;height:48px;object-fit:contain">';return '<svg width="84" height="48" viewBox="0 0 84 48" style="opacity:.85"><rect x="3" y="3" width="78" height="42" rx="3" fill="none" stroke="#ff3131" stroke-width="2.5"/><text x="42" y="30" text-anchor="middle" fill="#ff3131" font-size="18" font-weight="900" letter-spacing="3">印花章</text></svg>';}
 function buildNameSeal(nm,w,h){var n=nm.length;var fs=Math.max(12,Math.min(24,Math.floor((w-16)/(Math.max(n,1)*1.02))));var tx='<text x="'+(w/2)+'" y="'+(h/2+fs*0.36)+'" text-anchor="middle" fill="#ff3131" font-size="'+fs+'" font-weight="900" letter-spacing="2" font-family="Noto Serif TC,serif,sans-serif">'+esc(nm)+'</text>';return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:inline-block;flex-shrink:0"><rect x="2" y="2" width="'+(w-4)+'" height="'+(h-4)+'" rx="3" fill="#fff" stroke="#ff3131" stroke-width="2.5"/>'+tx+'</svg>';}
 function stampT(tid){if(STAMP_T[tid])return '<img src="'+STAMP_T[tid]+'" style="width:78px;height:42px;object-fit:contain">';var nm=tName(tid).replace('物理治療師','').replace('治療師','').trim()||tid;return buildNameSeal(nm,78,42);}
-function receiptHTML(b,name,dob,idn){
+function receiptHTML(b,name,dob,idn,maskId){
   var sv=svcOf(b.svc);var pay=PAY_LABEL[b.pay]||'現金';var shown=(b.paidAmount!=null?b.paidAmount:sv.price);
   var headLogo=CLINIC_LOGO?'<img src="'+CLINIC_LOGO+'" style="max-width:220px;max-height:70px;object-fit:contain;margin:0 auto 4px;display:block">':'<div class="rc-clinic">'+esc(CLINIC_INFO.name)+'</div>';
+  var idnDisplay=idn?(maskId?esc(idn.slice(0,1)+'●●●●●●●●'+idn.slice(-1)):esc(idn)):'';
   return '<div class="receipt print-area"><div class="rc-head">'+headLogo+'<div class="rc-title">收 據</div><div class="rc-no">編號 '+esc(b.receiptNo||genReceiptNo())+'</div></div>'+
-    '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+dob+'</span></div>':'')+(idn?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+esc(idn)+'</span></div>':'')+'</div>'+
+    '<div class="rc-sect"><div class="rc-st">個案資料</div><div class="rc-r"><span class="rc-k">姓名</span><span class="rc-v">'+esc(name)+'</span></div>'+(dob?'<div class="rc-r"><span class="rc-k">出生年月日</span><span class="rc-v">'+esc(dob)+'</span></div>':'')+(idnDisplay?'<div class="rc-r"><span class="rc-k">身分證字號</span><span class="rc-v">'+idnDisplay+'</span></div>':'')+'</div>'+
     '<div class="rc-sect"><div class="rc-st">治療資訊</div><div class="rc-r"><span class="rc-k">治療師</span><span class="rc-v">'+esc(tName(b.t))+'</span></div><div class="rc-r"><span class="rc-k">日期時間</span><span class="rc-v">'+b.date+' '+b.time+'</span></div><div class="rc-r"><span class="rc-k">項目</span><span class="rc-v">'+esc(sv.name)+' ('+sv.dur+'分)</span></div><div class="rc-r"><span class="rc-k">付款方式</span><span class="rc-v">'+pay+'</span></div>'+(b.pay==='transfer'&&b.transferLast5?'<div class="rc-r"><span class="rc-k">匯款後五碼</span><span class="rc-v">'+esc(b.transferLast5)+'</span></div><div class="rc-r"><span class="rc-k">匯款日期</span><span class="rc-v">'+esc(b.transferDate||'')+'</span></div>':'')+'<div class="rc-total"><span>實收金額</span><span>'+fmtNT(shown)+'</span></div></div>'+
     '<div class="rc-stamps" style="align-items:center"><div class="rc-stamp">'+stampClinic()+'</div><div class="rc-stamp">'+stampOwner()+'</div><div class="rc-stamp">'+stampT(b.t)+'</div></div></div>';
 }
 var _rcData=null;
 function buildReceiptDoc(b,name,dob,idn){
   var css='*{box-sizing:border-box;margin:0;padding:0}'+"body{font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',serif;background:#fff;padding:24px;color:#111}"+'.receipt{max-width:420px;margin:0 auto;padding:24px 28px;border:1px solid #ccc;font-size:13px;line-height:1.9}.rc-head{text-align:center;border-bottom:2.5px double #111;padding-bottom:12px;margin-bottom:14px}.rc-clinic{font-size:18px;font-weight:900;letter-spacing:1px}.rc-title{font-size:22px;font-weight:900;letter-spacing:6px;margin:6px 0 2px}.rc-no{font-size:11px;color:#555}.rc-sect{margin-bottom:12px}.rc-st{font-size:11px;font-weight:700;color:#555;border-bottom:1px solid #ddd;padding-bottom:3px;margin-bottom:8px}.rc-r{display:flex;gap:8px;margin-bottom:3px}.rc-k{min-width:84px;color:#555;font-size:12px;flex-shrink:0}.rc-v{font-size:12px;font-weight:600}.rc-total{display:flex;justify-content:space-between;border-top:2px solid #111;padding-top:8px;margin-top:6px;font-size:15px;font-weight:900}.rc-stamps{display:flex;justify-content:space-around;align-items:center;margin-top:18px;padding-top:14px;border-top:1px dashed #ccc}.rc-stamp{text-align:center;display:flex;flex-direction:column;align-items:center}.rc-stamp .sl{font-size:10px;color:#888;margin-bottom:6px;text-align:center}@media print{body{padding:0}.receipt{border:none}}';
-  var auto='<scr'+'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print();},500);});</scr'+'ipt>';
-  return '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>收據 '+esc(name)+'</title><style>'+css+'</style></head><body>'+receiptHTML(b,name,dob,idn)+auto+'</body></html>';
+  var printBtn='<div style="text-align:center;margin:16px 0;padding-top:14px;border-top:1px solid #ddd"><button style="padding:10px 32px;font-size:14px;background:#1a4d68;color:#fff;border:none;border-radius:8px;cursor:pointer" onclick="window.print()">列印 / 儲存為 PDF</button></div>';
+  return '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>收據 '+esc(name)+'</title><style>'+css+'</style></head><body>'+receiptHTML(b,name,dob,idn,false)+printBtn+'</body></html>';
 }
 function printReceiptWin(){if(!_rcData)return;var html=buildReceiptDoc(_rcData.b,_rcData.name,_rcData.dob,_rcData.idn);try{var blob=new Blob([html],{type:'text/html'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(function(){if(a.parentNode)a.parentNode.removeChild(a);URL.revokeObjectURL(url);},3000);showToast('已開啟收據新分頁，請選「另存為 PDF」');}catch(e){try{window.print();}catch(_){showToast('此環境不支援列印');}}}
-function showReceipt(b,name,dob,idn){_rcData={b:b,name:name,dob:dob,idn:idn};modal('<div class="modal-head no-print" style="background:'+tColor(b.t)+'">收據預覽<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body" style="padding:12px;background:var(--bg)"><div id="rc-capture">'+receiptHTML(b,name,dob,idn)+'</div></div><div class="modal-foot no-print" style="justify-content:space-between"><button class="btn gray" onclick="closeModal()">關閉</button><div class="row" style="gap:6px"><button class="btn sm" id="rc-line-btn" style="background:#06C755;color:#fff" onclick="pushReceiptLine()">推播 LINE</button><button class="btn" onclick="printReceiptWin()">列印 / PDF</button></div></div>');}
+function showReceipt(b,name,dob,idn){_rcData={b:b,name:name,dob:dob,idn:idn};modal('<div class="modal-head no-print" style="background:'+tColor(b.t)+'">收據預覽<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body" style="padding:12px;background:var(--bg)"><div id="rc-capture">'+receiptHTML(b,name,dob,idn,true)+'</div></div><div class="modal-foot no-print" style="justify-content:space-between"><button class="btn gray" onclick="closeModal()">關閉</button><div class="row" style="gap:6px"><button class="btn sm" id="rc-line-btn" style="background:#06C755;color:#fff" onclick="pushReceiptLine()">推播 LINE</button><button class="btn" onclick="printReceiptWin()">列印 / PDF</button></div></div>');}
 function _loadHtml2Canvas(cb){
   if(window.html2canvas){cb();return;}
   if(document.getElementById('__h2clib')){var t=setInterval(function(){if(window.html2canvas){clearInterval(t);cb();}},100);return;}
@@ -1396,14 +1397,14 @@ function pushReceiptLine(){
 
 /* ============ 病患管理 ============ */
 function getTags(ph){return PT_TAG_DATA[ph]||(PT_TAG_DATA[ph]=[]);}
-function tagChips(ph){return getTags(ph).map(function(tid){var t=PT_TAG_MAP[tid];if(!t)return '';return '<span class="tag" style="background:'+t.color+'22;color:'+t.color+'">'+esc(t.name)+'</span>';}).join('');}
+function tagChips(ph){return getTags(ph).map(function(tid){var t=PT_TAG_MAP[tid];if(!t)return '';var sc=/^#[0-9a-fA-F]{3,6}$/.test(t.color)?t.color:'#888888';return '<span class="tag" style="background:'+sc+'22;color:'+sc+'">'+esc(t.name)+'</span>';}).join('');}
 function ptVisits(key){return BOOKINGS.filter(function(b){return b.phone===key&&b.status==='completed';}).length;}
 function ptLast(key){var ds=BOOKINGS.filter(function(b){return b.phone===key;}).map(function(b){return b.date;}).sort();return ds.length?ds[ds.length-1]:'-';}
 views.patients=function(){
   var rows=PATIENTS.map(function(p){
     var key=ptKey(p);var it=INTAKE_DATA[key];var av=avatarEl(p.name,p.avatar,34);
     var phoneCell=p.phone?esc(p.phone):'<span class="tag amber">待補電話</span>';
-    return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+key+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+key+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+escJs(p.name)+'\',\''+key+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+key+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+key+'\')">編輯</button></td></tr>';
+    var ekey=escJs(key);return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+ekey+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+ekey+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+escJs(p.name)+'\',\''+ekey+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+ekey+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+ekey+'\')">編輯</button></td></tr>';
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
   return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
@@ -1459,7 +1460,7 @@ function savePt(ph){
   saveAll();closeModal();go('patients');showToast('已儲存');
 }
 function delPt(ph){modal('<div class="modal-head" style="background:var(--danger)">刪除病患<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px">確定刪除此病患？預約與病歷不受影響。</div></div><div class="modal-foot"><button class="btn gray" onclick="ptDetail(\''+ph+'\')">取消</button><button class="btn danger" onclick="confirmDelPt(\''+ph+'\')">確定刪除</button></div>');}
-function confirmDelPt(ph){var i=PATIENTS.findIndex(function(p){return ptKey(p)===ph;});if(i>-1)PATIENTS.splice(i,1);saveAll();closeModal();go('patients');showToast('已刪除');}
+function confirmDelPt(ph){if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可刪除病患');return;}var i=PATIENTS.findIndex(function(p){return ptKey(p)===ph;});if(i>-1)PATIENTS.splice(i,1);saveAll();closeModal();go('patients');showToast('已刪除');}
 function lineModal(ph){var p=getPatient(ph);if(!p)return;modal('<div class="modal-head" style="background:#06C755">綁定 LINE<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:13px;margin-bottom:12px">將 <b>'+esc(p.name)+'</b> 與 LINE 好友綁定</div><div class="field"><label>LINE User ID</label><input id="lineUid" value="'+esc(p.lineId||'')+'" placeholder="U1a2b3c..." style="font-family:monospace"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" style="background:#06C755" onclick="saveLine(\''+ph+'\')">綁定</button></div>');}
 function saveLine(ph){var p=getPatient(ph);if(!p)return;var u=document.getElementById('lineUid').value.trim();if(!u){showToast('請輸入 LINE User ID');return;}p.lineId=u;p.line=true;saveAll();closeModal();go('patients');showToast('已綁定 LINE');}
 function intakeLink(name,ph){
@@ -1671,8 +1672,8 @@ views.payments=function(){
     '<div class="card-body flush"><table><thead><tr><th>病患</th><th>服務</th><th>治療師</th><th>付款方式</th><th>金額</th><th>備註</th><th>結帳時間</th><th></th></tr></thead><tbody id="payBody">'+rows+'</tbody></table>'+(list.length?'':'<div class="empty">尚無消費記錄，結帳完成後會自動產生。</div>')+'</div></div>');
 };
 function reprintReceipt(bookingId){var b=BOOKINGS.find(function(x){return x.id===bookingId;});var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:pay.time||'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate,paidAmount:pay.amount,receiptNo:pay.receiptNo};else{showToast('找不到記錄');return;}}/* 沿用結帳當下的收據編號；舊資料若無編號則補產生一次並保存，之後補印維持一致 */if(pay){if(!pay.receiptNo){pay.receiptNo=genReceiptNo();saveAll();}b.receiptNo=pay.receiptNo;}var p=getPatient(b.phone)||{};if(pay)b.paidAmount=pay.amount;showReceipt(b,b.name,p.dob||'',p.idNum||'');}
-function voidPayment(pid){var r=PAYMENTS.find(function(x){return x.id===pid;});if(!r)return;var vnote=r.shockwave?'作廢後自營收與印花稅扣除；扣除的震波發數會加回套票。':'作廢後自營收與印花稅扣除；對應預約會還原為「已確認」。';modal('<div class="modal-head" style="background:var(--danger)">作廢消費記錄<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px;line-height:1.9">確定作廢這筆收款？<br><b>'+esc(r.name)+'</b>　'+esc(r.svcName)+'　'+fmtNT(r.amount)+'<br><span style="font-size:12px;color:var(--slate)">'+vnote+'</span></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmVoidPayment('+pid+')">確定作廢</button></div>');}
-function confirmVoidPayment(pid){var i=PAYMENTS.findIndex(function(x){return x.id===pid;});if(i>-1){var r=PAYMENTS[i];var b=BOOKINGS.find(function(x){return x.id===r.bookingId;});if(r.shockwave){var spk=getPkgs(r.phone).find(function(x){return x.id===r.swPkgId;});if(spk)spk.usedShots=Math.max(0,(spk.usedShots||0)-(r.shotsUsed||0));}else{if(b&&b.status==='completed'){b.status='confirmed';b.transferLast5='';b.transferDate='';}if(r.pay==='package'){var pk=getPkgs(r.phone).find(function(x){return x.id===r.pkgId;});if(pk&&pk.used>0)pk.used--;}}PAYMENTS.splice(i,1);}closeModal();go('payments');showToast('已作廢');saveAll();}
+function voidPayment(pid){if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可作廢消費記錄');return;}var r=PAYMENTS.find(function(x){return x.id===pid;});if(!r)return;var vnote=r.shockwave?'作廢後自營收與印花稅扣除；扣除的震波發數會加回套票。':'作廢後自營收與印花稅扣除；對應預約會還原為「已確認」。';modal('<div class="modal-head" style="background:var(--danger)">作廢消費記錄<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:14px;line-height:1.9">確定作廢這筆收款？<br><b>'+esc(r.name)+'</b>　'+esc(r.svcName)+'　'+fmtNT(r.amount)+'<br><span style="font-size:12px;color:var(--slate)">'+vnote+'</span></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="confirmVoidPayment('+pid+')">確定作廢</button></div>');}
+function confirmVoidPayment(pid){if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可作廢消費記錄');return;}var i=PAYMENTS.findIndex(function(x){return x.id===pid;});if(i>-1){var r=PAYMENTS[i];var b=BOOKINGS.find(function(x){return x.id===r.bookingId;});if(r.shockwave){var spk=getPkgs(r.phone).find(function(x){return x.id===r.swPkgId;});if(spk)spk.usedShots=Math.max(0,(spk.usedShots||0)-(r.shotsUsed||0));}else{if(b&&b.status==='completed'){b.status='confirmed';b.transferLast5='';b.transferDate='';}if(r.pay==='package'){var pk=getPkgs(r.phone).find(function(x){return x.id===r.pkgId;});if(pk&&pk.used>0)pk.used--;}}PAYMENTS.splice(i,1);}closeModal();go('payments');showToast('已作廢');saveAll();}
 
 /* ============ 員工薪資（含輸出明細）============ */
 views.payroll=function(){
@@ -1688,8 +1689,8 @@ function doPayrollExport(){
   var targets=tid==='__all__'?THERAPISTS.map(function(t){return t.id;}):[tid];var period=(from||'起始')+' ～ '+(to||'迄今');
   var sections=targets.map(function(id){var r=payrollRowsFor(id,from,to);if(!r)return '';var detailRows=r.detail.length?r.detail.map(function(d){return '<tr><td>'+esc(d.date)+'</td><td>'+esc(d.name)+'</td><td>'+esc(d.svc)+'</td><td style="text-align:right">'+fmtNT(d.rate)+'</td></tr>';}).join(''):'<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">此期間無完成療程</td></tr>';return '<div class="pr-block"><h3 style="font-size:16px;margin-bottom:2px">'+esc(r.t.name)+'　<span style="font-size:12px;color:#666;font-weight:400">'+esc(r.t.title)+'</span></h3><table class="pr-table"><thead><tr><th>日期</th><th>個案</th><th>服務</th><th style="text-align:right">抽成</th></tr></thead><tbody>'+detailRows+'</tbody></table><div class="pr-sum"><div class="pr-line"><span>完成療程</span><span>'+r.count+' 次</span></div><div class="pr-line"><span>抽成小計</span><span>'+fmtNT(r.comm)+'</span></div><div class="pr-line"><span>底薪</span><span>'+fmtNT(r.t.base)+'</span></div><div class="pr-line pr-total"><span>應發薪資</span><span>'+fmtNT(r.total)+'</span></div></div></div>';}).join('');
   var css='*{box-sizing:border-box;margin:0;padding:0}'+"body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;padding:28px;color:#1f3a47;background:#fff}"+'.pr-head{text-align:center;border-bottom:2px solid #1a4d68;padding-bottom:14px;margin-bottom:20px}.pr-head h1{font-size:20px;color:#1a4d68}.pr-head .sub{font-size:12px;color:#666;margin-top:4px}.pr-block{margin-bottom:28px;page-break-inside:avoid}.pr-table{width:100%;border-collapse:collapse;margin:10px 0}.pr-table th{background:#f0f5f7;text-align:left;padding:8px 10px;font-size:12px;color:#555;border-bottom:1px solid #dce6ec}.pr-table td{padding:7px 10px;font-size:13px;border-bottom:1px solid #eef3f6}.pr-sum{margin-top:8px;border-top:2px solid #1a4d68;padding-top:8px;max-width:280px;margin-left:auto}.pr-line{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}.pr-total{font-size:16px;font-weight:900;color:#1f9e7e;border-top:1px solid #dce6ec;margin-top:4px;padding-top:6px}@media print{body{padding:0}}';
-  var auto='<scr'+'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print();},500);});</scr'+'ipt>';
-  var html='<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>薪資明細</title><style>'+css+'</style></head><body><div class="pr-head"><h1>'+esc(CLINIC_INFO.name)+' · 薪資明細</h1><div class="sub">期間：'+esc(period)+'　|　產生日期：'+todayStr()+'</div></div>'+sections+auto+'</body></html>';
+  var printBtn='<div style="text-align:center;margin:20px 0;padding-top:14px;border-top:1px solid #dce6ec"><button style="padding:10px 32px;font-size:14px;background:#1a4d68;color:#fff;border:none;border-radius:8px;cursor:pointer" onclick="window.print()">列印 / 儲存為 PDF</button></div>';
+  var html='<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>薪資明細</title><style>'+css+'</style></head><body><div class="pr-head"><h1>'+esc(CLINIC_INFO.name)+' · 薪資明細</h1><div class="sub">期間：'+esc(period)+'　|　產生日期：'+todayStr()+'</div></div>'+sections+printBtn+'</body></html>';
   try{var blob=new Blob([html],{type:'text/html'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(function(){if(a.parentNode)a.parentNode.removeChild(a);URL.revokeObjectURL(url);},3000);closeModal();showToast('已開啟明細新分頁，可列印或存 PDF');}catch(e){showToast('輸出失敗：'+e.message);}
 }
 
@@ -1995,7 +1996,7 @@ function __selfCheck(){
   var expected=['login','dashboard','bookings','patients','soap','analytics','payments','payroll','stamptax','retention','education','schedule','packages','receipt','clinic'];
   var missing=expected.filter(function(v){return typeof views[v]!=='function';});
   var fnList=['svcOf','fmtNT','tColor','getPatient','modal','closeModal','showToast','esc','bpHTML','sendLineMsg','syncOne','ensureGCal','renderCal','addBkModal','bkDetail','checkoutModal','doCheckout','receiptHTML','showReceipt','ptDetail','soapCard','toggleSoap','saveSoap','romBlock','collectRom','topClientsCard','payrollExportModal','reprintReceipt','voidPayment','addEduModal','sendEduModal','saveSched','addLeave','addSvcModal','addPkgModal','tEditModal'];
-  var missingFn=fnList.filter(function(f){try{return typeof window[f]!=='function'&&typeof eval(f)!=='function';}catch(e){return true;}});
+  var missingFn=fnList.filter(function(f){return typeof window[f]!=='function';});
   if(missing.length||missingFn.length){
     console.warn('缺漏 views:',missing,'缺漏函式:',missingFn);
     return {ok:false,missing:missing,missingFn:missingFn};
@@ -2016,7 +2017,7 @@ function __safeErrorToast(msg){
 window.addEventListener('error',function(ev){
   var box=document.getElementById('frame');
   if(box&&(!box.innerHTML||box.innerHTML.length<50)){
-    box.innerHTML='<div style="padding:30px;font-family:monospace;font-size:12px;color:#c00;line-height:1.8"><b>JS 錯誤（請截圖回報）：</b><br>'+ (ev.message||'')+'<br>行 '+ev.lineno+'，列 '+ev.colno+'<br><button style="margin-top:14px;padding:8px 16px;border:none;background:#1a4d68;color:#fff;border-radius:8px;cursor:pointer" onclick="location.reload()">重新整理</button></div>';
+    box.innerHTML='<div style="padding:30px;font-family:monospace;font-size:12px;color:#c00;line-height:1.8"><b>JS 錯誤（請截圖回報）：</b><br>'+esc(ev.message||'')+'<br>行 '+Number(ev.lineno||0)+'，列 '+Number(ev.colno||0)+'<br><button style="margin-top:14px;padding:8px 16px;border:none;background:#1a4d68;color:#fff;border-radius:8px;cursor:pointer" onclick="location.reload()">重新整理</button></div>';
   }else{
     /* 畫面還在，只是某個操作出錯：給輕量提示，不破壞當前畫面 */
     __safeErrorToast(ev.message);
