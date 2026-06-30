@@ -329,11 +329,11 @@ var _resetDone=false;
   var _f=window.fetch;
   window.fetch=function(url,opts){
     try{
-      if(typeof url==='string'&&RENDER_URL&&url.indexOf(RENDER_URL)===0&&typeof gcalToken!=='undefined'&&gcalToken){
+      if(typeof url==='string'&&RENDER_URL&&url.indexOf(RENDER_URL)===0&&loginToken&&Date.now()<loginTokenExp){
         opts=opts||{};
         var h=opts.headers||{};
-        if(h instanceof Headers){if(!h.has('Authorization'))h.set('Authorization','Bearer '+gcalToken);}
-        else{if(!h.Authorization&&!h.authorization)h.Authorization='Bearer '+gcalToken;}
+        if(h instanceof Headers){if(!h.has('Authorization'))h.set('Authorization','Bearer '+loginToken);}
+        else{if(!h.Authorization&&!h.authorization)h.Authorization='Bearer '+loginToken;}
         opts.headers=h;
         return _f.call(this,url,opts);
       }
@@ -355,7 +355,7 @@ var EMAIL_WHITELIST={
 };
 var ROLE_LABELS={admin:'管理員',therapist:'治療師'};
 var currentUser=null;
-var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false;
+var gcalToken=null,gcalClient=null,gcalTokenExp=0,gcalConsented=false,loginClient=null,loginConsented=false,loginToken=null,loginTokenExp=0;
 
 /* ============ 共用工具 ============ */
 function svcOf(id){var s=SERVICES.find(function(x){return x.id===id;});return s||{name:'-',price:0,dur:0};}
@@ -700,14 +700,14 @@ function triggerGoogleLogin(){
     fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+token}}).then(function(res){return res.json();}).then(function(info){
       var email=(info.email||'');var cfg=EMAIL_WHITELIST[email]||EMAIL_WHITELIST[email.toLowerCase()];
       if(!cfg){setLoading(false);try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}showUnauthorizedModal(email);return;}
-      gcalToken=token;gcalTokenExp=Date.now()+(Number(expIn||3600)-60)*1000;gcalConsented=true;
+      loginToken=token;loginTokenExp=Date.now()+(Number(expIn||3600)-60)*1000;loginConsented=true;
       currentUser={email:email,name:cfg.name||info.name,avatar:info.picture||'',role:cfg.role,therapistId:cfg.therapistId,pages:ROLE_PAGES[cfg.role]||[]};
       loadFromServer(function(){setLoading(false);go((currentUser.pages.indexOf('dashboard')>-1)?'dashboard':(currentUser.pages[0]||'login'));startNotifyPolling();});
     }).catch(function(){setLoading(false);showLoginError('無法取得帳號資訊，請再試一次');});
   }
   function initAndLogin(){
     try{
-      if(!loginClient){loginClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',callback:function(r){if(r.error){if(!loginConsented){loginConsented=true;loginClient.requestAccessToken({prompt:'consent'});return;}setLoading(false);showLoginError('登入失敗：'+r.error);return;}loginConsented=true;finishLogin(r.access_token,r.expires_in);}});}
+      if(!loginClient){loginClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile',callback:function(r){if(r.error){if(!loginConsented){loginConsented=true;loginClient.requestAccessToken({prompt:'consent'});return;}setLoading(false);showLoginError('登入失敗：'+r.error);return;}loginConsented=true;finishLogin(r.access_token,r.expires_in);}});}
       loginClient.requestAccessToken({prompt:''});
     }catch(e){setLoading(false);showLoginError('登入初始化失敗：'+e.message);}
   }
@@ -733,12 +733,35 @@ function doBackup(){
   }catch(e){showToast('備份失敗：'+e.message);}
 }
 /* 加密備份：PBKDF2（200,000 次 SHA-256）衍生 AES-256-GCM 金鑰；格式：NCEK(4)|ver(1)|salt(16)|iv(12)|ciphertext */
+var _pendingRestoreFile=null;
+function _confirmPlainBackup(){
+  modal('<div class="modal-head" style="background:var(--danger)">明文備份警告<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body"><div class="banner" style="background:#fff0f0;border:1px solid #ffc9c9"><span>!</span><div>'+
+    '明文備份（.json）包含所有病患<b>個人資料</b>（姓名、身分證、出生日期、電話）與完整 SOAP 病歷，以純文字儲存，<b>無加密保護</b>。<br><br>'+
+    '建議改用「加密備份（.ncek）」。若要繼續，請確保備份檔立即存放至加密磁碟或安全位置。'+
+    '</div></div></div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn danger" onclick="closeModal();doBackup()">確定下載明文備份</button></div>');
+}
 function doBackupEncrypted(){
-  var pw=(prompt('設定備份密碼（還原時需要同一密碼，請妥善保管）')||'').trim();
-  if(!pw)return;
+  if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可執行備份');return;}
+  modal('<div class="modal-head" style="background:var(--navy)">加密備份<button class="x" onclick="closeModal()">&times;</button></div>'+
+    '<div class="modal-body">'+
+    '<div class="banner info" style="margin-bottom:14px"><span>i</span><div>密碼使用 AES-256-GCM 加密保護，還原時需輸入同一密碼，請妥善保管。</div></div>'+
+    '<div class="field"><label>備份密碼（至少 6 個字元）</label><input type="password" id="bpw1" autocomplete="new-password" placeholder="輸入密碼"></div>'+
+    '<div class="field"><label>再次輸入密碼確認</label><input type="password" id="bpw2" autocomplete="new-password" placeholder="重複密碼"></div>'+
+    '</div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="_confirmBackupPw()">加密並下載</button></div>');
+  setTimeout(function(){var el=document.getElementById('bpw1');if(el)el.focus();},50);
+}
+function _confirmBackupPw(){
+  var pw=(document.getElementById('bpw1').value||'');
+  if(!pw){showToast('請輸入密碼');return;}
   if(pw.length<6){showToast('密碼至少需 6 個字元');return;}
-  var pw2=(prompt('再次輸入密碼確認')||'').trim();
-  if(pw!==pw2){showToast('兩次密碼不一致，已取消');return;}
+  var pw2=(document.getElementById('bpw2').value||'');
+  if(pw!==pw2){showToast('兩次密碼不一致，請重新輸入');document.getElementById('bpw1').value='';document.getElementById('bpw2').value='';document.getElementById('bpw1').focus();return;}
+  closeModal();_runBackupEncrypt(pw);
+}
+function _runBackupEncrypt(pw){
   var data=new TextEncoder().encode(JSON.stringify(buildSnapshot()));
   var salt=crypto.getRandomValues(new Uint8Array(16));
   var iv=crypto.getRandomValues(new Uint8Array(12));
@@ -768,15 +791,27 @@ function _decryptBackupBuf(buf,pw){
 function restoreEncryptedBackup(input){
   var file=input&&input.files&&input.files[0];if(!file)return;
   if(!(currentUser&&currentUser.role==='admin')){showToast('僅管理員可還原');input.value='';return;}
-  var pw=(prompt('請輸入備份密碼')||'').trim();
-  if(!pw){input.value='';return;}
+  _pendingRestoreFile=file;input.value='';
+  modal('<div class="modal-head" style="background:var(--navy)">還原加密備份<button class="x" onclick="closeModal();_pendingRestoreFile=null">&times;</button></div>'+
+    '<div class="modal-body">'+
+    '<div class="banner" style="background:#fff7e6;border:1px solid #ffc107;margin-bottom:14px"><span>!</span><div>還原會以備份檔<b>覆蓋目前全部資料</b>，此操作無法復原。</div></div>'+
+    '<div class="field"><label>備份密碼</label><input type="password" id="rpw" autocomplete="current-password" placeholder="輸入備份密碼"></div>'+
+    '</div>'+
+    '<div class="modal-foot"><button class="btn gray" onclick="closeModal();_pendingRestoreFile=null">取消</button><button class="btn danger" onclick="_confirmRestorePw()">解密並還原</button></div>');
+  setTimeout(function(){var el=document.getElementById('rpw');if(el)el.focus();},50);
+}
+function _confirmRestorePw(){
+  var pw=(document.getElementById('rpw').value||'');
+  if(!pw){showToast('請輸入密碼');return;}
+  var file=_pendingRestoreFile;if(!file){closeModal();return;}
+  _pendingRestoreFile=null;closeModal();
   file.arrayBuffer().then(function(buf){return _decryptBackupBuf(buf,pw);}).then(function(s){
     if(!s||typeof s!=='object'){showToast('備份資料格式異常');return;}
     window._restoreSnap=s;
     var info=[];if(s.PATIENTS)info.push('病患 '+s.PATIENTS.length+' 位');if(s.BOOKINGS)info.push('預約 '+s.BOOKINGS.length+' 筆');if(s.SOAP_NOTES)info.push('病歷 '+s.SOAP_NOTES.length+' 份');if(s.PAYMENTS)info.push('消費 '+s.PAYMENTS.length+' 筆');
     var when=s._backupAt?('<div class="t-sub" style="margin-top:8px">備份時間：'+esc(new Date(s._backupAt).toLocaleString('zh-TW',{hour12:false}))+'</div>'):'';
     modal('<div class="modal-head" style="background:var(--warn)">確認還原加密備份<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="banner" style="background:#fdf3e0;border:1px solid #f0d090;color:#8a5a12"><span>!</span><div>還原會用這個備份檔<b>覆蓋目前所有資料</b>，目前尚未備份的變更將遺失且無法復原。</div></div><div style="font-size:13px;line-height:1.9">備份內容：'+esc(info.join('、')||'（無法判讀筆數）')+when+'</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" style="background:var(--warn)" onclick="confirmRestore()">確認還原並覆蓋</button></div>');
-  }).catch(function(){showToast('解密失敗，密碼可能有誤或非加密備份格式');}).finally(function(){input.value='';});
+  }).catch(function(){showToast('解密失敗，密碼可能有誤或非加密備份格式');});
 }
 function restoreBackup(input){
   var file=input.files&&input.files[0];if(!file)return;
@@ -806,7 +841,7 @@ function backupCard(){
   var upIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
   var lockIcon='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
   var restoreBtn=canRestore?'<label class="btn gray" style="cursor:pointer;font-family:inherit">'+upIcon+'還原明文備份（.json）<input type="file" accept="application/json,.json" style="display:none" onchange="restoreBackup(this)"></label><label class="btn gray" style="cursor:pointer;font-family:inherit">'+lockIcon+'還原加密備份（.ncek）<input type="file" accept=".ncek" style="display:none" onchange="restoreEncryptedBackup(this)"></label>':'';
-  return '<div class="card"><div class="card-head"><h3>資料備份</h3><span class="tag mint">手動</span></div><div class="card-body"><div class="banner info"><span>i</span><div>下載備份會把所有預約、病患、病歷、消費與設定打包成一個檔案存到你的裝置。建議定期備份，尤其在重新部署伺服器之前。<b>加密備份</b>（.ncek）使用 AES-256-GCM 加密，需設定密碼，更安全。'+(canRestore?'還原會以備份檔覆蓋目前全部資料。':'')+'</div></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost" onclick="doBackup()">'+dlIcon+'明文備份（.json）</button><button class="btn" onclick="doBackupEncrypted()">'+lockIcon+'加密備份（.ncek）</button></div>'+(canRestore?'<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">'+restoreBtn+'</div>':'')+'</div></div>';
+  return '<div class="card"><div class="card-head"><h3>資料備份</h3><span class="tag mint">手動</span></div><div class="card-body"><div class="banner info"><span>i</span><div>下載備份會把所有預約、病患、病歷、消費與設定打包成一個檔案存到你的裝置。建議定期備份，尤其在重新部署伺服器之前。<b>加密備份</b>（.ncek）使用 AES-256-GCM 加密，需設定密碼，更安全。'+(canRestore?'還原會以備份檔覆蓋目前全部資料。':'')+'</div></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost" onclick="_confirmPlainBackup()">'+dlIcon+'明文備份（.json）</button><button class="btn" onclick="doBackupEncrypted()">'+lockIcon+'加密備份（.ncek）</button></div>'+(canRestore?'<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">'+restoreBtn+'</div>':'')+'</div></div>';
 }
 
 views.dashboard=function(){
@@ -1022,7 +1057,7 @@ function loadGsi(cb){if(typeof google!=='undefined'&&google.accounts&&google.acc
 function ensureGCal(cb){
   if(gcalToken&&Date.now()<gcalTokenExp){cb();return;}
   if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  loadGsi(function(){if(!gcalClient){gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',callback:function(r){if(r.error){if(!gcalConsented){gcalConsented=true;gcalClient.requestAccessToken({prompt:'consent'});return;}showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;cb();}});}gcalClient.requestAccessToken({prompt:gcalConsented?'':'consent'});});
+  loadGsi(function(){if(!gcalClient){gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events',callback:function(r){if(r.error){if(!gcalConsented){gcalConsented=true;gcalClient.requestAccessToken({prompt:'consent'});return;}showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;cb();}});}gcalClient.requestAccessToken({prompt:gcalConsented?'':'consent'});});
 }
 function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.calendarId||'primary');}
