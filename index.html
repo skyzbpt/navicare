@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://line-webhook-x1ux.onrender.com https://www.googleapis.com https://accounts.google.com; img-src 'self' data: blob: https://*.line-scdn.net https://*.line-apps.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://line-webhook-x1ux.onrender.com https://www.googleapis.com https://accounts.google.com; img-src 'self' data: blob: https://*.line-scdn.net https://*.line-apps.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; worker-src 'none';">
+<!-- 防點擊劫持：frame-ancestors 於 <meta> CSP 會被瀏覽器忽略，須於代管層（Render 靜態服務）以 HTTP 標頭設定 Content-Security-Policy: frame-ancestors 'none' 或 X-Frame-Options: DENY。 -->
 <title>領航物理治療所 管理系統</title>
 <link rel="icon" type="image/svg+xml" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a4d68'/><g transform='translate(4 4)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/></g></svg>">
 <style>
