@@ -384,6 +384,13 @@ function showToast(m){var t=document.getElementById('sToast');t.textContent=m;t.
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 /* 供 inline onclick="fn('VALUE')" 使用：先跳脫反斜線與單引號（JS 字串），再做 HTML 跳脫，避免姓名/備註含 ' 破壞處理函式 */
 function escJs(s){return esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));}
+function debounce(fn,ms){var t;return function(){var a=arguments,c=this;if(t)clearTimeout(t);t=setTimeout(function(){fn.apply(c,a);},ms||180);};}
+/* 搜尋防抖：避免每次按鍵都重繪整個清單造成卡頓（函式宣告已 hoist，此處引用安全）*/
+var dFilterPt=debounce(function(v){filterPt(v);},160);
+var dFilterPayRows=debounce(function(v){filterPayRows(v);},160);
+var dSearchBkPatient=debounce(function(v){searchBkPatient(v);},180);
+var dFilterSoapPt=debounce(function(v){filterSoapPt(v);},180);
+var dFilterSoap=debounce(function(v){filterSoap(v);},220);
 function isAdmin(){return !!(currentUser&&currentUser.role==='admin');}
 function requireAdmin(msg){if(isAdmin())return true;showToast(msg||'僅管理員可執行此操作');return false;}
 /* 統一的危險操作確認框；cancelAttr/confirmAttr 為 onclick 內容（動態參數請先以 escJs 跳脫） */
@@ -843,6 +850,7 @@ function confirmRestore(){
   var s=window._restoreSnap;if(!s)return;
   if(!requireAdmin('僅管理員可還原'))return;
   if(!RENDER_URL){showToast('未設定伺服器，無法還原');return;}
+  cancelPendingSave(); // 取消待送的防抖儲存，避免舊快照覆蓋還原內容
   showToast('還原中…');
   fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);window._restoreSnap=null;_resetDone=true;/* 避免重新整理前的 saveAll 把舊記憶體寫回 */showToast('已從備份還原，重新載入中…');setTimeout(function(){location.reload();},700);}).catch(function(e){showToast('還原失敗：'+e.message);});
 }
@@ -906,6 +914,7 @@ function confirmResetServer(){
   var ack=document.getElementById('resetAck')&&document.getElementById('resetAck').checked;
   if(!ack){showToast('請先勾選確認項目');return;}
   if(!RENDER_URL){showToast('未設定伺服器，無法重置');return;}
+  cancelPendingSave(); // 取消待送的防抖儲存，避免舊快照覆蓋清空
   showToast('清空中…');
   fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(r){
     if(r.status===401||r.status===403){showToast('登入已逾時，請重新登入後再試');return;}
@@ -945,18 +954,63 @@ function go(v){
 
 /* ============ 伺服器持久化 ============ */
 var _saveExpiredNotified=false;
-function saveAll(){
-  if(!RENDER_URL||!currentUser)return Promise.resolve();
-  if(_resetDone)return Promise.resolve();
+/* 儲存合併：多數呼叫點連續觸發 saveAll()，改為防抖合併成一次全量 POST，
+   降低網路負載與並發覆蓋競態；關鍵時機（關閉分頁、還原前）以 flushSave() 立即送出。 */
+var _saveTimer=null,_savePending=false,_saveInFlight=false;
+function _saveNow(){
+  _saveTimer=null;
+  if(!RENDER_URL||!currentUser){_savePending=false;return Promise.resolve();}
+  if(_resetDone){_savePending=false;return Promise.resolve();}
+  if(_saveInFlight){_savePending=true;return Promise.resolve();} // 前一次尚未完成，等它結束後再補存
+  if(typeof navigator!=='undefined'&&navigator.onLine===false){_savePending=true;setOfflineBanner(true);return Promise.resolve();}
+  _saveInFlight=true;_savePending=false;
   var snap=buildSnapshot();
   return fetch(RENDER_URL+'/clinic-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).then(function(r){
     if(r.status===401||r.status===403){
       if(!_saveExpiredNotified){_saveExpiredNotified=true;showSaveExpiredModal();}
       return;
     }
-    _saveExpiredNotified=false;
-  }).catch(function(e){console.warn('saveAll 失敗',e.message);});
+    _saveExpiredNotified=false;setOfflineBanner(false);
+  }).catch(function(e){console.warn('saveAll 失敗',e.message);_savePending=true;setOfflineBanner(true);})
+  .then(function(){_saveInFlight=false;if(_savePending)_saveNow();}); // 期間若有新變更或失敗，補送一次
 }
+function saveAll(){
+  if(!RENDER_URL||!currentUser)return Promise.resolve();
+  if(_resetDone)return Promise.resolve();
+  _savePending=true;
+  if(_saveTimer)clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(_saveNow,700);
+  return Promise.resolve();
+}
+/* 立即送出待存變更（取消防抖）；用於關閉分頁、還原/重置前 */
+function flushSave(){if(_saveTimer){clearTimeout(_saveTimer);_saveTimer=null;}if(_savePending)return _saveNow();return Promise.resolve();}
+function cancelPendingSave(){if(_saveTimer){clearTimeout(_saveTimer);_saveTimer=null;}_savePending=false;}
+function setOfflineBanner(show){
+  try{
+    var el=document.getElementById('offlineBanner');
+    if(show){
+      if(!el){el=document.createElement('div');el.id='offlineBanner';el.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#8a5a12;color:#fff;font-size:13px;text-align:center;padding:8px 12px;box-shadow:0 -2px 8px rgba(0,0,0,.15)';document.body.appendChild(el);}
+      el.textContent='⚠ 目前離線或連線失敗——變更已暫存，恢復連線後會自動儲存';
+      el.style.display='block';
+    }else if(el){el.style.display='none';}
+  }catch(e){}
+}
+try{
+  window.addEventListener('online',function(){setOfflineBanner(false);if(_savePending)_saveNow();});
+  window.addEventListener('offline',function(){setOfflineBanner(true);});
+  /* Esc 關閉開啟中的 Modal */
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){var bg=document.getElementById('modalBg');if(bg&&bg.classList.contains('show'))closeModal();}
+  });
+  /* 關閉/重新整理分頁前，把尚未送出的變更以 keepalive fetch 立即補存（keepalive 會夾帶
+     攔截器加上的授權標頭並在卸載後仍完成），避免防抖視窗內的變更遺失 */
+  window.addEventListener('beforeunload',function(){
+    if(_savePending&&RENDER_URL&&currentUser&&!_resetDone){
+      if(_saveTimer){clearTimeout(_saveTimer);_saveTimer=null;}
+      try{fetch(RENDER_URL+'/clinic-data',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(buildSnapshot())});_savePending=false;}catch(e){}
+    }
+  });
+}catch(e){}
 function showSaveExpiredModal(){
   modal('<div class="modal-head" style="background:var(--warn)">登入已逾時<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body"><div class="banner" style="background:#fdf3e0;border:1px solid #f0d090;color:#8a5a12"><span>!</span><div>您的登入憑證已過期（約每小時需重新驗證一次），<b>剛才的變更尚未存到伺服器</b>。請重新登入後，系統會自動重新儲存，資料不會遺失。</div></div></div>'+
@@ -1243,7 +1297,7 @@ function addBkModal(){
   if(!SERVICES.length){showToast('請先到「服務與課程」建立服務項目');return;}
   modal('<div class="modal-head" style="background:var(--navy)">新增預約<button class="x" onclick="closeModal()">&times;</button></div>'+
     '<div class="modal-body">'+
-    '<div class="field"><label>搜尋現有病患</label><div class="search-wrap" style="width:100%"><input id="nb-search" placeholder="輸入姓名或電話查詢" oninput="searchBkPatient(this.value)" style="width:100%"></div><div id="nb-results" style="margin-top:4px"></div></div>'+
+    '<div class="field"><label>搜尋現有病患</label><div class="search-wrap" style="width:100%"><input id="nb-search" placeholder="輸入姓名或電話查詢" oninput="dSearchBkPatient(this.value)" style="width:100%"></div><div id="nb-results" style="margin-top:4px"></div></div>'+
     '<div class="grid2"><div class="field"><label>姓名</label><input id="nb-name" placeholder="姓名"></div><div class="field"><label>電話</label><input id="nb-phone" placeholder="09xx-xxx-xxx"></div></div>'+
     '<div class="grid2"><div class="field"><label>治療師</label><select id="nb-t">'+tOpts+'</select></div><div class="field"><label>服務</label><select id="nb-svc">'+sOpts+'</select></div></div>'+
     '<div class="grid2"><div class="field"><label>日期</label><input id="nb-date" type="date" value="'+todayStr()+'"></div><div class="field"><label>時間</label><input id="nb-time" type="time" value="09:00" min="08:00" max="22:00" step="900"></div></div>'+
@@ -1510,7 +1564,7 @@ views.patients=function(){
     var ekey=escJs(key);return '<tr><td><div class="row" style="gap:10px"><div>'+av+'</div><div><div class="t-name">'+esc(p.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">'+tagChips(key)+'</div></div></div></td><td>'+phoneCell+'</td><td>'+ptVisits(key)+' 次</td><td>'+ptLast(key)+'</td><td>'+(p.line?'<span class="tag green">已綁</span>':'<button class="btn sm gray" onclick="lineModal(\''+ekey+'\')">綁定</button>')+'</td><td>'+(it?'<button class="btn sm ghost" onclick="viewIntake(\''+ekey+'\')">已填寫</button>':'<button class="btn sm gray" onclick="intakeLink(\''+escJs(p.name)+'\',\''+ekey+'\')">發送</button>')+'</td><td class="row" style="gap:5px"><button class="btn sm ghost" onclick="tagModal(\''+ekey+'\')">標籤</button><button class="btn sm ghost" onclick="ptDetail(\''+ekey+'\')">編輯</button></td></tr>';
   }).join('');
   var body='<div class="card"><div class="card-body flush"><table><thead><tr><th>姓名 / 標籤</th><th>電話</th><th>次數</th><th>最近就診</th><th>LINE</th><th>初診表</th><th></th></tr></thead><tbody id="ptBody">'+rows+'</tbody></table>'+(PATIENTS.length?'':'<div class="empty">尚無病患，點右上角「新增病患」開始建立。</div>')+'</div></div>';
-  return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="filterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
+  return shell('patients','病患管理',lineFriendsCard()+body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="ptq" placeholder="搜尋姓名或電話" oninput="dFilterPt(this.value)"><button class="s-clear" onclick="document.getElementById(\'ptq\').value=\'\';filterPt(\'\')">&times;</button></div><button class="btn sm" onclick="addPtModal()">+ 新增病患</button></div>');
 };
 function filterPt(q){q=(q||'').toLowerCase();document.querySelectorAll('#ptBody tr').forEach(function(tr){tr.style.display=tr.textContent.toLowerCase().indexOf(q)>-1?'':'none';});}
 var _ptGender='';
@@ -1691,7 +1745,7 @@ views.soap=function(){
       return head+inner+'</div>';
     }).join('');
   }
-  return shell('soap','SOAP 病歷',body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="soapq" placeholder="搜尋個案姓名或電話" value="'+esc(soapQuery)+'" oninput="filterSoap(this.value)"><button class="s-clear" onclick="filterSoap(\'\')">&times;</button></div><button class="btn sm" onclick="addSoapModal()">+ 新增病歷</button></div>');
+  return shell('soap','SOAP 病歷',body,'<div class="row" style="gap:8px"><div class="search-wrap"><input id="soapq" placeholder="搜尋個案姓名或電話" value="'+esc(soapQuery)+'" oninput="dFilterSoap(this.value)"><button class="s-clear" onclick="filterSoap(\'\')">&times;</button></div><button class="btn sm" onclick="addSoapModal()">+ 新增病歷</button></div>');
 };
 function toggleSoap(id){soapCollapsed[id]=!soapCollapsed[id];var b=document.getElementById('sbody-'+id);if(b)b.classList.toggle('collapsed',soapCollapsed[id]);var c=document.getElementById('chev-'+id);if(c)c.style.transform=soapCollapsed[id]?'rotate(-90deg)':'';}
 function saveSoap(id){var n=SOAP_NOTES.find(function(x){return x.id===id;});if(!n)return;n.S=document.getElementById('soap-S-'+id).value;n.O=document.getElementById('soap-O-'+id).value;n.A=document.getElementById('soap-A-'+id).value;n.P=document.getElementById('soap-P-'+id).value;n.bodyParts=bpValues('bp-'+id);n.rom=collectRom(id);soapCollapsed[id]=true;var b=document.getElementById('sbody-'+id);if(b)b.classList.add('collapsed');var c=document.getElementById('chev-'+id);if(c)c.style.transform='rotate(-90deg)';showToast('SOAP 病歷已儲存');saveAll();}
@@ -1702,7 +1756,7 @@ function addSoapModal(){
   var myT=(currentUser&&currentUser.role==='therapist'&&currentUser.therapistId)?currentUser.therapistId:null;
   var pOpts=PATIENTS.map(function(p){return '<option value="'+esc(p.phone||p.pid)+'">'+esc(p.name)+(p.phone?' ('+esc(p.phone)+')':'')+'</option>';}).join('');
   var tOpts=(myT?THERAPISTS.filter(function(t){return t.id===myT;}):THERAPISTS).map(function(t){return '<option value="'+t.id+'">'+t.name+'</option>';}).join('');
-  modal('<div class="modal-head" style="background:var(--navy)">新增 SOAP 病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>個案</label><div class="search-wrap" style="width:100%"><input id="ns-search" placeholder="輸入姓名或電話快速篩選" oninput="filterSoapPt(this.value)" style="width:100%"></div></div><div class="field"><label>選擇個案</label><select id="ns-pt">'+pOpts+'</select></div><div class="field"><label>治療師</label><select id="ns-t"'+(myT?' disabled style="background:var(--navy-l)"':'')+'>'+tOpts+'</select></div><div class="field"><label>就診日期</label><input id="ns-date" type="date" max="'+todayStr()+'" value="'+todayStr()+'"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSoap()">建立</button></div>');
+  modal('<div class="modal-head" style="background:var(--navy)">新增 SOAP 病歷<button class="x" onclick="closeModal()">&times;</button></div><div class="modal-body"><div class="field"><label>個案</label><div class="search-wrap" style="width:100%"><input id="ns-search" placeholder="輸入姓名或電話快速篩選" oninput="dFilterSoapPt(this.value)" style="width:100%"></div></div><div class="field"><label>選擇個案</label><select id="ns-pt">'+pOpts+'</select></div><div class="field"><label>治療師</label><select id="ns-t"'+(myT?' disabled style="background:var(--navy-l)"':'')+'>'+tOpts+'</select></div><div class="field"><label>就診日期</label><input id="ns-date" type="date" max="'+todayStr()+'" value="'+todayStr()+'"></div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">取消</button><button class="btn" onclick="submitSoap()">建立</button></div>');
   if(!myT&&soapFolderT){var tsel=document.getElementById('ns-t');if(tsel)tsel.value=soapFolderT;}
 }
 function filterSoapPt(q){q=(q||'').toLowerCase();var sel=document.getElementById('ns-pt');if(!sel)return;var matches=PATIENTS.filter(function(p){return !q||(p.name||'').toLowerCase().indexOf(q)>-1||(p.phone||'').toLowerCase().indexOf(q)>-1;});sel.innerHTML=matches.map(function(p){return '<option value="'+esc(p.phone||p.pid)+'">'+esc(p.name)+(p.phone?' ('+esc(p.phone)+')':'')+'</option>';}).join('')||'<option value="">查無符合個案</option>';}
@@ -1771,7 +1825,7 @@ views.payments=function(){
   var dateLabel=_payFilter.date?('（'+_payFilter.date+'）'):'（全部）';
   return shell('payments','消費記錄',
     '<div class="stat-grid"><div class="stat-card highlight"><div class="sc-n mint">'+fmtNT(total)+'</div><div class="sc-l">收款總額'+dateLabel+'</div></div><div class="stat-card"><div class="sc-n">'+list.length+'</div><div class="sc-l">交易筆數</div></div><div class="stat-card"><div class="sc-n">'+fmtNT(byPay.cash)+'</div><div class="sc-l">現金</div></div><div class="stat-card"><div class="sc-n">'+fmtNT(byPay.transfer+byPay.card)+'</div><div class="sc-l">匯款＋刷卡</div></div></div>'+
-    '<div class="card"><div class="card-head" style="gap:10px"><div class="row" style="gap:6px">'+pills+'</div><div class="row" style="gap:8px;flex-wrap:wrap"><div class="row" style="gap:5px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">每日</span><input type="date" value="'+esc(_payFilter.date)+'" onchange="setPayDate(this.value)" class="'+(_payFilter.date?'':'date-empty')+'" data-ph="選擇日期" style="padding:8px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+(_payFilter.date?'<button class="btn sm gray" onclick="clearPayDate()">清除</button>':'')+'</div><div class="search-wrap"><input id="payq" placeholder="搜尋姓名或電話" oninput="filterPayRows(this.value)"><button class="s-clear" onclick="document.getElementById(\'payq\').value=\'\';filterPayRows(\'\')">&times;</button></div></div></div>'+
+    '<div class="card"><div class="card-head" style="gap:10px"><div class="row" style="gap:6px">'+pills+'</div><div class="row" style="gap:8px;flex-wrap:wrap"><div class="row" style="gap:5px;align-items:center"><span style="font-size:12px;color:var(--slate);white-space:nowrap">每日</span><input type="date" value="'+esc(_payFilter.date)+'" onchange="setPayDate(this.value)" class="'+(_payFilter.date?'':'date-empty')+'" data-ph="選擇日期" style="padding:8px 10px;border:1.5px solid var(--mist);border-radius:8px;outline:none">'+(_payFilter.date?'<button class="btn sm gray" onclick="clearPayDate()">清除</button>':'')+'</div><div class="search-wrap"><input id="payq" placeholder="搜尋姓名或電話" oninput="dFilterPayRows(this.value)"><button class="s-clear" onclick="document.getElementById(\'payq\').value=\'\';filterPayRows(\'\')">&times;</button></div></div></div>'+
     '<div class="card-body flush"><table><thead><tr><th>病患</th><th>服務</th><th>治療師</th><th>付款方式</th><th>金額</th><th>備註</th><th>結帳時間</th><th></th></tr></thead><tbody id="payBody">'+rows+'</tbody></table>'+(list.length?'':'<div class="empty">尚無消費記錄，結帳完成後會自動產生。</div>')+'</div></div>');
 };
 function reprintReceipt(bookingId){var b=BOOKINGS.find(function(x){return x.id===bookingId;});var pay=PAYMENTS.find(function(x){return x.bookingId===bookingId;});if(!b){if(pay)b={name:pay.name,phone:pay.phone,t:pay.t,svc:pay.svc,date:pay.date,time:pay.time||'',pay:pay.pay,transferLast5:pay.transferLast5,transferDate:pay.transferDate,paidAmount:pay.amount,receiptNo:pay.receiptNo};else{showToast('找不到記錄');return;}}/* 沿用結帳當下的收據編號；舊資料若無編號則補產生一次並保存，之後補印維持一致 */if(pay){if(!pay.receiptNo){pay.receiptNo=genReceiptNo();saveAll();}b.receiptNo=pay.receiptNo;}var p=getPatient(b.phone)||{};if(pay)b.paidAmount=pay.amount;showReceipt(b,b.name,p.dob||'',p.idNum||'');}
