@@ -2,6 +2,21 @@
 
 後端 API 契約與 `index.html` 前端**完全對齊**，切換時前端只需改兩行（見步驟 6）。
 
+## ⚡ 快速部署（腳本版，推薦）
+
+在 [Google Cloud Shell](https://shell.cloud.google.com) 執行：
+
+```bash
+git clone https://github.com/skyzbpt/navicare.git
+cd navicare && git checkout claude/index-html-review-r42g2e && cd server
+bash deploy.sh          # 互動式：只需輸入 3 個密碼，其餘全自動（步驟 1–3）
+bash smoke-test.sh <部署完成印出的網址>   # 自動驗收 13 項
+```
+
+之後照下方**步驟 4（備份舊資料）→ 步驟 5（LINE Console）→ 步驟 6（前端切換，
+可用 `bash ../scripts/switch-frontend.sh <網址>`）→ 步驟 7（還原資料）** 完成切換。
+以下手動步驟說明保留作為腳本的對照與故障排除參考。
+
 ## 架構
 
 ```
