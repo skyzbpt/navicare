@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>初診問卷｜領航物理治療所</title>
+<style>
+:root{--navy:#1a4d68;--mint:#2DC8A0;--bg:#f4f7f9;--ink:#1e293b;--slate:#64748b;--line:#e2e8f0}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif}
+body{background:var(--bg);color:var(--ink);padding-bottom:40px}
+.head{background:var(--navy);color:#fff;padding:18px 20px;font-size:17px;font-weight:700}
+.wrap{max-width:520px;margin:0 auto;padding:16px}
+.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.sec{font-size:13px;font-weight:800;color:var(--mint);letter-spacing:1px;margin:4px 0 2px}
+label{display:block;font-size:13px;font-weight:700;color:var(--navy);margin:14px 0 6px}
+input,select,textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:15px;outline:none;background:#fff}
+input:focus,select:focus,textarea:focus{border-color:var(--mint)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1.5px solid var(--line);border-radius:20px;padding:7px 14px;font-size:13px;cursor:pointer;user-select:none}
+.chip.on{background:var(--mint);border-color:var(--mint);color:#fff}
+.btn{width:100%;padding:14px;background:var(--mint);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:18px}
+.btn:disabled{opacity:.5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.vas-val{font-weight:800;color:var(--navy)}
+.err{color:#c62828;font-size:13px;margin-top:10px;display:none}
+.ok{background:#fff;border-radius:14px;padding:40px 20px;text-align:center}
+.ok .big{font-size:44px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="head">領航物理治療所｜初診問卷</div>
+<div class="wrap">
+  <div id="form">
+    <div class="card">
+      <div class="sec">基本資料</div>
+      <label>姓名 *</label><input id="q-name" maxlength="50">
+      <div class="row2">
+        <div><label>性別</label><select id="q-gender"><option value="">不填</option><option value="male">男</option><option value="female">女</option></select></div>
+        <div><label>出生年月日</label><input id="q-dob" type="date"></div>
+      </div>
+      <label>身分證字號</label><input id="q-id" maxlength="12" style="text-transform:uppercase">
+      <label>聯絡電話 *</label><input id="q-phone" maxlength="20" inputmode="tel">
+      <label>地址</label><input id="q-address" maxlength="200">
+      <label>職業</label><input id="q-occupation" maxlength="50">
+    </div>
+    <div class="card">
+      <div class="sec">緊急聯絡人</div>
+      <div class="row2">
+        <div><label>姓名</label><input id="q-emg-name" maxlength="50"></div>
+        <div><label>電話</label><input id="q-emg-phone" maxlength="20" inputmode="tel"></div>
+      </div>
+      <label>如何得知本診所（可複選）</label>
+      <div class="chips" id="q-referral"></div>
+    </div>
+    <div class="card">
+      <div class="sec">主訴與症狀</div>
+      <label>主訴（哪裡不舒服、想改善什麼）*</label><textarea id="q-complaint" rows="3" maxlength="500"></textarea>
+      <label>症狀持續時間</label><input id="q-duration" maxlength="50" placeholder="例：兩週、三個月">
+      <label>疼痛強度（VAS 0-10）：<span class="vas-val" id="vas-val">5</span> 分</label>
+      <input id="q-vas" type="range" min="0" max="10" value="5" oninput="document.getElementById('vas-val').textContent=this.value">
+      <label>患處（可複選）</label>
+      <div class="chips" id="q-body"></div>
+    </div>
+    <div class="card">
+      <div class="sec">健康史</div>
+      <label>已知病史（高血壓、糖尿病等）</label><textarea id="q-medical" rows="2" maxlength="1000"></textarea>
+      <label>受傷經驗</label><textarea id="q-injury" rows="2" maxlength="1000"></textarea>
+      <label>手術經驗</label><textarea id="q-surgery" rows="2" maxlength="1000"></textarea>
+      <label>運動習慣</label><textarea id="q-exercise" rows="2" maxlength="1000"></textarea>
+      <button class="btn" id="q-submit" onclick="submitIntake()">送出問卷</button>
+      <div class="err" id="q-err"></div>
+    </div>
+  </div>
+  <div class="ok" id="done" style="display:none">
+    <div class="big">✅</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:8px">問卷已送出</div>
+    <div style="font-size:13px;color:var(--slate)">感謝您的填寫，就診時治療師已能掌握您的狀況。</div>
+  </div>
+</div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+var LIFF_ID='__LIFF_ID__';var LINE_PROFILE=null;
+function $(id){return document.getElementById(id);}
+var REFERRALS=['網路搜尋','親友介紹','醫師轉介','社群媒體','路過看到','其他'];
+var BODY_PARTS=['頸部','肩部','上背','下背/腰','手肘','手腕/手','髖部','膝蓋','腳踝/足','頭部','胸部','其他'];
+function chips(id,list){$(id).innerHTML=list.map(function(x){return '<div class="chip" data-v="'+x+'" onclick="this.classList.toggle(\'on\')">'+x+'</div>';}).join('');}
+function picked(id){return Array.prototype.slice.call(document.querySelectorAll('#'+id+' .chip.on')).map(function(c){return c.dataset.v;});}
+chips('q-referral',REFERRALS);chips('q-body',BODY_PARTS);
+if(LIFF_ID){liff.init({liffId:LIFF_ID}).then(function(){if(liff.isLoggedIn())return liff.getProfile();}).then(function(p){if(p)LINE_PROFILE=p;}).catch(function(){});}
+function submitIntake(){
+  var err=$('q-err');err.style.display='none';
+  var name=$('q-name').value.trim(),phone=$('q-phone').value.trim(),complaint=$('q-complaint').value.trim();
+  if(!name||!/^[\d()\-+\s]{5,20}$/.test(phone)){err.textContent='請填寫姓名與有效電話';err.style.display='block';return;}
+  if(!complaint){err.textContent='請填寫主訴';err.style.display='block';return;}
+  var btn=$('q-submit');btn.disabled=true;btn.textContent='送出中…';
+  fetch('/public-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    name:name,phone:phone,gender:$('q-gender').value,dob:$('q-dob').value,idNum:$('q-id').value.trim().toUpperCase(),
+    address:$('q-address').value.trim(),occupation:$('q-occupation').value.trim(),
+    emergencyName:$('q-emg-name').value.trim(),emergencyPhone:$('q-emg-phone').value.trim(),
+    referral:picked('q-referral'),complaint:complaint,duration:$('q-duration').value.trim(),
+    vas:Number($('q-vas').value),bodyParts:picked('q-body'),
+    medicalHistory:$('q-medical').value.trim(),injuryHistory:$('q-injury').value.trim(),
+    surgeryHistory:$('q-surgery').value.trim(),exerciseHabit:$('q-exercise').value.trim(),
+    lineUserId:LINE_PROFILE?LINE_PROFILE.userId:'',linePictureUrl:LINE_PROFILE?(LINE_PROFILE.pictureUrl||''):''
+  })}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){
+    if(res.ok){$('form').style.display='none';$('done').style.display='block';window.scrollTo(0,0);}
+    else{err.textContent=(res.j&&res.j.message)||'送出失敗，請再試一次';err.style.display='block';btn.disabled=false;btn.textContent='送出問卷';}
+  }).catch(function(){err.textContent='連線失敗，請再試一次';err.style.display='block';btn.disabled=false;btn.textContent='送出問卷';});
+}
+</script>
+</body>
+</html>
