@@ -208,6 +208,21 @@ app.get('/healthz', async (req, res) => {
   try { await pool.query('SELECT 1'); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ ok: false }); }
 });
+/* 根目錄：純 API 服務，提供人可讀的狀態頁（含資料庫連線檢查） */
+app.get('/', async (req, res) => {
+  let db = false;
+  try { await pool.query('SELECT 1'); db = true; } catch (e) {}
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.status(db ? 200 : 503).end(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<div style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;text-align:center">' +
+    '<div style="font-size:52px">' + (db ? '✅' : '⚠️') + '</div>' +
+    '<h2 style="color:#1a4d68">領航物理治療所 後端</h2>' +
+    '<p style="font-size:16px">服務狀態：<b>運作中</b><br>資料庫連線：<b>' + (db ? '正常' : '異常') + '</b></p>' +
+    '<p style="color:#64748b;font-size:13px">這是 API 伺服器，不是管理介面。請由管理系統前端登入使用。</p>' +
+    '</div>'
+  );
+});
 
 /* ============ 快照 ============ */
 app.get('/clinic-data', auth, async (req, res) => {
