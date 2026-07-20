@@ -157,6 +157,7 @@ async function lineProfile(userId) {
 
 const app = express();
 app.set('x-powered-by', false);
+app.set('trust proxy', true); // Cloud Run 前端為 GFE，讓 req.ip 取 X-Forwarded-For 客戶端位址（供節流辨識用戶，而非全部視為同一代理 IP）
 
 /* CORS：前端與 LIFF 頁面跨域呼叫（Authorization 標頭需要 preflight） */
 app.use((req, res, next) => {
@@ -263,8 +264,14 @@ function rateLimited(ip) {
   arr.push(now); rl.set(ip, arr); if (rl.size > 5000) rl.clear();
   return arr.length > 20;
 }
+/* 硬上限：即使節流被繞過，也不讓未匯入的公開送出無限增長（防儲存耗盡/洗版） */
+async function submissionsFull() {
+  const c = await pool.query('SELECT count(*)::int AS n FROM submissions WHERE NOT acked');
+  return c.rows[0].n >= 2000;
+}
 app.post('/public-booking', async (req, res) => {
   if (rateLimited(req.ip)) return res.status(429).json({ message: '請稍後再試' });
+  if (await submissionsFull()) return res.status(429).json({ message: '目前系統繁忙，請稍後再試或改用電話預約' });
   const d = req.body || {};
   const data = {
     name: cleanStr(d.name, 50), phone: cleanStr(d.phone, 20),
@@ -279,6 +286,7 @@ app.post('/public-booking', async (req, res) => {
 });
 app.post('/public-intake', async (req, res) => {
   if (rateLimited(req.ip)) return res.status(429).json({ message: '請稍後再試' });
+  if (await submissionsFull()) return res.status(429).json({ message: '目前系統繁忙，請稍後再試' });
   const d = req.body || {};
   const data = {
     name: cleanStr(d.name, 50), phone: cleanStr(d.phone, 20), gender: ['male', 'female'].includes(d.gender) ? d.gender : '',
@@ -399,13 +407,18 @@ app.get('/proxy-image', async (req, res) => {
   const url = String(req.query.url || '');
   if (!PROXY_HOST_RE.test(url)) return res.status(400).json({ message: '不允許的來源' });
   try {
-    const r = await fetch(url);
+    /* redirect:'manual' 不追隨轉址，避免白名單網域經 3xx 轉向內網（GCP metadata、私有服務）造成 SSRF 繞過 */
+    const r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
+    if (r.status >= 300 && r.status < 400) return res.status(400).end();
     if (!r.ok) return res.status(502).end();
     const ct = r.headers.get('content-type') || 'image/jpeg';
     if (!/^image\//.test(ct)) return res.status(400).end();
+    if (Number(r.headers.get('content-length') || 0) > 5 * 1024 * 1024) return res.status(400).end();
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 5 * 1024 * 1024) return res.status(400).end();
     res.setHeader('Content-Type', ct);
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.end(Buffer.from(await r.arrayBuffer()));
+    res.end(buf);
   } catch (e) { res.status(502).end(); }
 });
 
