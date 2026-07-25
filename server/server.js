@@ -458,12 +458,22 @@ app.get('/login-logo', async (req, res) => {
 });
 const PROXY_HOST_RE = /^https:\/\/([a-z0-9-]+\.)*(line-scdn\.net|line-apps\.com)\//i;
 app.get('/proxy-image', async (req, res) => {
-  const url = String(req.query.url || '');
+  let url = String(req.query.url || '');
   if (!PROXY_HOST_RE.test(url)) return res.status(400).json({ message: '不允許的來源' });
   try {
-    /* redirect:'manual' 不追隨轉址，避免白名單網域經 3xx 轉向內網（GCP metadata、私有服務）造成 SSRF 繞過 */
-    const r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
-    if (r.status >= 300 && r.status < 400) return res.status(400).end();
+    /* 自己處理轉址，每一跳都重新過一次白名單：
+       - redirect:'follow' 會讓白名單網域把我們導去內網（GCP metadata、私有服務）造成 SSRF 繞過
+       - 但一律拒絕 3xx 也會擋掉 LINE CDN 自身的正常轉址，頭貼就抓不回來
+       折衷成「跟隨轉址，但只跟到仍在白名單內的網址」，最多 3 跳。 */
+    let r;
+    for (let hop = 0; ; hop++) {
+      r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
+      if (r.status < 300 || r.status >= 400) break;
+      const loc = r.headers.get('location');
+      if (!loc || hop >= 3) return res.status(400).end();
+      try { url = new URL(loc, url).toString(); } catch (e) { return res.status(400).end(); }
+      if (!PROXY_HOST_RE.test(url)) return res.status(400).end();
+    }
     if (!r.ok) return res.status(502).end();
     const ct = r.headers.get('content-type') || 'image/jpeg';
     if (!/^image\//.test(ct)) return res.status(400).end();
