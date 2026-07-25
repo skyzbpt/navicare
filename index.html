@@ -162,6 +162,24 @@ tbody tr:hover{background:var(--bg)}
 .sp.sel{background:var(--navy);border-color:var(--navy);color:#fff}
 #sToast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:12px 24px;border-radius:999px;font-size:13px;font-weight:600;z-index:200;opacity:0;pointer-events:none;transition:.25s;box-shadow:var(--sh-md);white-space:pre-line;text-align:center}
 #sToast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* 新通知彈窗：有新的線上預約／初診表時自動跳出。
+   原本只有鈴鐺紅點＋音效＋分頁標題閃爍，瀏覽器通知權限一旦被拒就完全沒有畫面提示。
+   刻意不做成遮罩式對話框——櫃台可能正在填病歷，蓋掉畫面會打斷作業。 */
+/* 垂直位置讓開頁首（最高約 70px），彈窗跳出時鈴鐺與同步鍵仍點得到，看起來也像是從鈴鐺展開 */
+#notifyPop{position:fixed;top:76px;right:14px;z-index:150;width:330px;max-width:calc(100vw - 28px);display:none}
+#notifyPop.show{display:block;animation:npIn .22s ease-out}
+@keyframes npIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+.np-card{background:#fff;border-radius:var(--r);border:1px solid var(--mist);box-shadow:var(--sh-lg);overflow:hidden}
+.np-head{background:var(--navy);color:#fff;padding:11px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.np-head .x{background:rgba(255,255,255,.2);border:none;width:26px;height:26px;border-radius:8px;font-size:16px;color:#fff;line-height:1;cursor:pointer;flex-shrink:0}
+.np-head .x:hover{background:rgba(255,255,255,.32)}
+.np-head .x:focus-visible{outline-color:#fff}
+.np-body{padding:4px 14px}
+.np-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.np-row:last-child{border-bottom:none}
+.np-ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.np-t{font-weight:700;font-size:13px}
+.np-foot{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:var(--bg)}
 .bp-grid{display:flex;flex-wrap:wrap;gap:6px}
 .bp-btn{padding:7px 12px;border-radius:8px;border:1.5px solid var(--mist);background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:var(--slate);transition:.12s;font-family:inherit}
 .bp-btn.sel{background:var(--mint);border-color:var(--mint);color:#fff}
@@ -263,6 +281,10 @@ input[type="date"].date-empty:focus::before{content:none}
   .modal{border-radius:var(--r-lg) var(--r-lg) 0 0;max-height:94vh}
   .modal-bg{align-items:flex-end;padding:0}
   .modal-foot{position:sticky;bottom:0;background:#fff}
+  /* 手機版導覽列吸附在頂端，通知彈窗改從底部進場才不會互相遮擋 */
+  #notifyPop{top:auto;bottom:14px;left:14px;right:14px;width:auto}
+  #notifyPop.show{animation:npInMobile .22s ease-out}
+  @keyframes npInMobile{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 }
 @media(max-width:560px){
   .grid2{grid-template-columns:1fr}
@@ -279,6 +301,7 @@ input[type="date"].date-empty:focus::before{content:none}
 </div>
 <div class="modal-bg" id="modalBg"><div class="modal" id="modalBox" role="dialog" aria-modal="true" tabindex="-1"></div></div>
 <div id="sToast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="notifyPop" role="status" aria-live="polite"></div>
 <script>
 /* ============ 資料層 ============ */
 var SERVICES=[
@@ -656,6 +679,53 @@ function addNotify(kind,count,silent){
     flashTitle('🔔 '+label+' '+count);
     try{if(window.Notification&&Notification.permission==='granted')new Notification('領航物理治療所',{body:label+' '+count+' 筆待處理',tag:'navigator-'+kind});}catch(e){}
   }
+  /* 待匯入的線上預約／初診表是「新進來、要馬上處理」的事，登入時也該直接跳彈窗。
+     「需要關心的名單」則是長期存在的統計值，登入就彈會變成每次登入都被打擾一次，
+     因此只有在數字真的增加時（silent=false）才彈；平時仍會顯示在鈴鐺與通知面板裡。 */
+  if(!silent||kind!=='care')showNotifyPop();
+}
+/* ── 新通知彈窗 ── */
+var _notifyPopTimer=null;
+function notifyPopHTML(){
+  var unread=NOTIFY_LOG.filter(function(n){return !n.read&&notifyInfo(n);});
+  if(!unread.length)return '';
+  var rows=unread.slice(0,3).map(function(n){
+    var info=notifyInfo(n);
+    return '<div class="np-row"><span class="np-ic" style="background:'+info.bg+'">'+info.icon+'</span>'
+      +'<div style="min-width:0"><div class="np-t">'+esc(info.title)+'</div>'
+      +'<div class="t-sub">'+esc(info.desc)+' · '+esc(notifyTimeAgo(n.at))+'</div></div></div>';
+  }).join('');
+  var more=unread.length>3?'<div class="t-sub" style="padding:2px 0 8px">另有 '+(unread.length-3)+' 則通知</div>':'';
+  /* 由未讀通知本身判斷，不看 _notifyCount：checkPendingCount / runSync 都是先 addNotify
+     再更新 _notifyCount，這裡讀到的會是上一輪的舊值，「立即匯入」會該出現時不出現。 */
+  var canPull=unread.some(function(n){return n.kind==='bk'||n.kind==='intake';});
+  return '<div class="np-card">'
+    +'<div class="np-head"><span>🔔 新通知</span><button class="x" aria-label="關閉通知" onclick="closeNotifyPop()">&times;</button></div>'
+    +'<div class="np-body">'+rows+more+'</div>'
+    +'<div class="np-foot"><button class="btn sm gray" onclick="closeNotifyPop();openNotifyPanel()">查看全部</button>'
+    +(canPull?'<button class="btn sm" onclick="notifyPopImport()">立即匯入</button>':'')
+    +'</div></div>';
+}
+/* 20 秒後自動收起；鈴鐺上的未讀數會留著，訊息不會因此消失 */
+function showNotifyPop(){
+  var el=document.getElementById('notifyPop');if(!el)return;
+  var h=notifyPopHTML();
+  if(!h){closeNotifyPop();return;}
+  el.innerHTML=sanitizeHTML(h);
+  el.classList.add('show');
+  if(_notifyPopTimer)clearTimeout(_notifyPopTimer);
+  _notifyPopTimer=setTimeout(closeNotifyPop,20000);
+}
+function closeNotifyPop(){
+  if(_notifyPopTimer){clearTimeout(_notifyPopTimer);_notifyPopTimer=null;}
+  var el=document.getElementById('notifyPop');
+  if(el){el.classList.remove('show');el.innerHTML='';}
+}
+function notifyPopImport(){
+  closeNotifyPop();
+  pullSubmissions(false);
+  markAllNotifyRead();
+  setTimeout(function(){checkPendingCount();rebuildNotifyPanel();},1500);
 }
 // 計算「1 個月以上未回診」的個案數（需要關心的名單最緊急的一組）
 function lapsedCount(){try{return careStats().list.filter(function(r){return r.bucket==='m1';}).length;}catch(e){return 0;}}
@@ -726,13 +796,17 @@ function clearNotifyLog(){
   rebuildNotifyPanel();
   if(typeof saveAll==='function')saveAll();
 }
+/* 通知的圖示與文案（通知面板與彈窗共用，避免兩邊各寫一份而走樣）；未知類型回 null */
+function notifyInfo(n){
+  var c=Number(n.count)||0;
+  if(n.kind==='care')return {icon:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>',bg:'#fef2f2',title:'需要關心的名單',desc:c+' 位個案超過一個月未回診'};
+  if(n.kind==='bk')return {icon:'📅',bg:'var(--mint-l,#edfaf6)',title:'線上預約',desc:c+' 筆待匯入'};
+  if(n.kind==='intake')return {icon:'📋',bg:'var(--navy-l)',title:'初診表單',desc:c+' 份待匯入'};
+  return null;
+}
 function notifyRowHTML(n){
-  var VALID_KINDS=['care','bk','intake'];
-  if(VALID_KINDS.indexOf(n.kind)===-1)return '';
-  var info;
-  if(n.kind==='care')info={icon:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e05c5c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>',bg:'#fef2f2',title:'需要關心的名單',desc:n.count+' 位個案超過一個月未回診'};
-  else if(n.kind==='bk')info={icon:'📅',bg:'var(--mint-l,#edfaf6)',title:'線上預約',desc:n.count+' 筆待匯入'};
-  else info={icon:'📋',bg:'var(--navy-l)',title:'初診表單',desc:n.count+' 份待匯入'};
+  var info=notifyInfo(n);
+  if(!info)return '';
   var dot=n.read?'':'<span style="width:8px;height:8px;border-radius:50%;background:var(--danger,#e05c5c);flex-shrink:0"></span>';
   var op=n.read?'opacity:.55':'';
   var act=(n.kind==='care')?'<button class="btn sm ghost" onclick="closeModal();setCareFilter(\'m1\')">查看名單</button>':'';
@@ -840,7 +914,7 @@ function showUnauthorizedModal(email){
     '<div style="font-size:13px;color:var(--slate);line-height:1.8">以下帳號不在診所授權名單內：<br><b style="color:var(--ink);font-family:monospace;word-break:break-all">'+esc(email||'')+'</b><br>請改用診所授權的 Gmail 帳號登入，<br>或聯繫管理員將此帳號加入名單。</div>'+
     '</div><div class="modal-foot" style="justify-content:center"><button class="btn" onclick="closeModal()">我知道了</button></div>');
 }
-function signOut(){currentUser=null;try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}go('login');}
+function signOut(){currentUser=null;closeNotifyPop();if(_notifyTimer){clearInterval(_notifyTimer);_notifyTimer=null;}try{if(typeof google!=='undefined')google.accounts.id.disableAutoSelect();}catch(e){}go('login');}
 /* 角色以伺服器 /me 的回覆為準。前端的 EMAIL_WHITELIST 只是離線／舊版後端的備援，
    任何人都能在瀏覽器改掉它，所以真正的權限判斷必須由後端提供（後端也會各自把關 API）。
    /me 不存在或連不上時保留備援角色，畫面照常可用，敏感操作仍由後端擋。 */
@@ -1152,7 +1226,9 @@ try{
   window.addEventListener('offline',function(){setOfflineBanner(true);});
   /* Esc 關閉開啟中的 Modal */
   document.addEventListener('keydown',function(e){
-    if(e.key==='Escape'&&modalIsOpen())dismissModal();
+    if(e.key!=='Escape')return;
+    if(modalIsOpen())dismissModal();
+    else closeNotifyPop(); // 沒有開對話框時，Esc 收起通知彈窗
   });
   /* 關閉/重新整理分頁前，把尚未送出的變更以 keepalive fetch 立即補存（keepalive 會夾帶
      攔截器加上的授權標頭並在卸載後仍完成），避免防抖視窗內的變更遺失 */
