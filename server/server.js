@@ -2,6 +2,7 @@
  *
  * 取代原 Render + MongoDB 後端，API 契約與前端 index.html 完全對齊：
  *   管理端（需 Google OAuth Bearer token，email 須在 ALLOWED_EMAILS 白名單）：
+ *     GET  /me                     目前登入者 {email,role}；role 由伺服器決定，前端據此開放頁面
  *     GET  /clinic-data            全量快照
  *     POST /clinic-data            全量快照覆寫（另存歷史，保留最近 30 份）
  *     GET  /pending-submissions    未匯入的線上預約/初診 → {bookings:[{id,data}],intakes:[{id,data}]}
@@ -26,6 +27,7 @@
  *   DATABASE_URL               postgresql://user:pass@/db?host=/cloudsql/PROJECT:REGION:INSTANCE
  *   GOOGLE_CLIENT_ID           前端同一組 OAuth Client ID（驗 aud）
  *   ALLOWED_EMAILS             逗號分隔的白名單 email
+ *   ADMIN_EMAILS               逗號分隔的管理員 email（須為 ALLOWED_EMAILS 子集）；未設定＝全部視為管理員
  *   LINE_CHANNEL_SECRET        webhook 簽章驗證
  *   LINE_CHANNEL_ACCESS_TOKEN  推播用
  *   PUBLIC_BASE_URL            本服務對外網址（收據圖片連結用）
@@ -45,6 +47,8 @@ const PORT = process.env.PORT || 8080;
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+/* 管理員白名單（ALLOWED_EMAILS 的子集）。未設定時所有授權帳號皆視為管理員，維持既有行為。 */
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || '';
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
@@ -109,6 +113,8 @@ async function verifyGoogleToken(token) {
   const info = await r.json();
   if (!info || !info.email) return null;
   if (GOOGLE_CLIENT_ID && info.aud !== GOOGLE_CLIENT_ID) return null; // token 必須是本 app 簽發的
+  /* email_verified 未通過就不採信該 email：未驗證的 email 可被冒用來對撞白名單 */
+  if (info.email_verified !== undefined && String(info.email_verified) !== 'true') return null;
   const email = String(info.email).toLowerCase();
   const ttl = Math.max(30, Number(info.expires_in || 60)) * 1000;
   if (tokenCache.size > 200) tokenCache.clear();
@@ -123,10 +129,22 @@ async function auth(req, res, next) {
     if (!email) return res.status(401).json({ message: '授權無效或已逾期' });
     if (!ALLOWED_EMAILS.includes(email)) return res.status(403).json({ message: '此帳號不在授權名單' });
     req.userEmail = email;
+    req.userRole = roleOf(email);
+    /* 已驗證身分的回應一律不留快取：內容含病患個資與病歷 */
+    res.setHeader('Cache-Control', 'no-store');
     next();
   } catch (e) {
     res.status(401).json({ message: '授權驗證失敗' });
   }
+}
+/* 角色由伺服器判定，前端的 EMAIL_WHITELIST 僅作離線備援，不能拿來提權 */
+function roleOf(email) {
+  if (!ADMIN_EMAILS.length) return 'admin';
+  return ADMIN_EMAILS.includes(email) ? 'admin' : 'therapist';
+}
+function adminOnly(req, res, next) {
+  if (req.userRole !== 'admin') return res.status(403).json({ message: '此操作僅限管理員' });
+  next();
 }
 
 /* ============ LINE ============ */
@@ -157,7 +175,22 @@ async function lineProfile(userId) {
 
 const app = express();
 app.set('x-powered-by', false);
-app.set('trust proxy', true); // Cloud Run 前端為 GFE，讓 req.ip 取 X-Forwarded-For 客戶端位址（供節流辨識用戶，而非全部視為同一代理 IP）
+/* 只信任「最靠近本服務的 1 跳」代理（Cloud Run 的 GFE）。
+   用 true 會信任整條 X-Forwarded-For，req.ip 取最左側＝呼叫端自己塞的值，
+   攻擊者只要每次換一個假 IP 就能完全繞過下方的公開端點節流。
+   設為 1 時 req.ip 取 GFE 附加的那一段，才是真實來源位址。
+   若日後在 Cloud Run 前面再加一層 LB／CDN，請把數字加到對應的跳數。 */
+app.set('trust proxy', 1);
+
+/* 一般性安全標頭：本服務只回 JSON／圖片／少數靜態頁，全部禁止嗅探與內嵌 */
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  /* LIFF 頁面交由 LINE 用戶端載入，不加 frame 限制以免影響既有流程；其餘一律禁止被內嵌 */
+  if (req.path !== '/book' && req.path !== '/intake') res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // 前端與 LIFF 頁需跨源載入頭貼／收據圖
+  next();
+});
 
 /* CORS：前端與 LIFF 頁面跨域呼叫（Authorization 標頭需要 preflight） */
 app.use((req, res, next) => {
@@ -202,7 +235,18 @@ app.post('/webhook', express.raw({ type: '*/*', limit: '2mb' }), async (req, res
   }
 });
 
-app.use(express.json({ limit: '30mb' })); // 快照含 base64 Logo/印章，放寬上限
+/* Body 大小分兩級：
+   - 已驗證身分的快照／收據圖需要放寬到 30mb（含 base64 Logo、印章、收據 PNG）
+   - 公開端點（LIFF 表單、目錄查詢）只需要幾十 KB；若也給 30mb，未驗證的呼叫端就能反覆
+     丟大 body 逼伺服器解析，節流是在 handler 內才判斷的，擋不到解析階段的資源消耗。 */
+const jsonLarge = express.json({ limit: '30mb' });
+const jsonSmall = express.json({ limit: '64kb' });
+const LARGE_BODY_PATHS = new Set(['/clinic-data', '/push-receipt-image', '/publish-catalog']);
+function wantsLargeBody(req) { return req.method === 'POST' && LARGE_BODY_PATHS.has(req.path); }
+/* 放寬上限前先驗身分：auth 不需要 body，提早跑就能讓未授權的大 body 在解析前被 401 擋下。
+   token 會命中 tokenCache，路由層再跑一次 auth 不會多打一次 Google。 */
+app.use((req, res, next) => (wantsLargeBody(req) ? auth(req, res, next) : next()));
+app.use((req, res, next) => (wantsLargeBody(req) ? jsonLarge : jsonSmall)(req, res, next));
 
 /* ============ 健康檢查 ============ */
 app.get('/healthz', async (req, res) => {
@@ -225,6 +269,10 @@ app.get('/', async (req, res) => {
   );
 });
 
+/* ============ 身分 ============ */
+/* 前端據此決定可用頁面；角色只認伺服器這一份，前端自帶的名單改不動權限 */
+app.get('/me', auth, (req, res) => res.json({ email: req.userEmail, role: req.userRole }));
+
 /* ============ 快照 ============ */
 app.get('/clinic-data', auth, async (req, res) => {
   const r = await pool.query('SELECT data FROM clinic_snapshot WHERE id=1');
@@ -232,6 +280,12 @@ app.get('/clinic-data', auth, async (req, res) => {
 });
 app.post('/clinic-data', auth, async (req, res) => {
   const snap = req.body && typeof req.body === 'object' ? req.body : {};
+  /* 「清空重置」只有管理員能做。前端重置按鈕送的就是 {}，一般儲存永遠帶著資料，
+     所以用「空物件覆蓋非空快照」來辨識，不會誤擋正常儲存。 */
+  if (!Object.keys(snap).length && req.userRole !== 'admin') {
+    const cur = await pool.query(`SELECT jsonb_typeof(data) IS NOT NULL AND data <> '{}'::jsonb AS has FROM clinic_snapshot WHERE id=1`);
+    if (cur.rows.length && cur.rows[0].has) return res.status(403).json({ message: '清空伺服器資料僅限管理員' });
+  }
   await pool.query(
     `INSERT INTO clinic_snapshot(id, data, updated_at) VALUES(1,$1,now())
      ON CONFLICT(id) DO UPDATE SET data=$1, updated_at=now()`,
@@ -318,7 +372,7 @@ app.post('/send-line', auth, async (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(502).json({ message: e.message }); }
 });
-app.post('/push-receipt-image', auth, async (req, res) => {
+app.post('/push-receipt-image', auth, adminOnly, async (req, res) => {
   const { lineUserId, imageBase64 } = req.body || {};
   const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(imageBase64 || '');
   if (!lineUserId || !m) return res.status(400).json({ message: '缺少 lineUserId 或圖片格式錯誤' });
@@ -383,7 +437,7 @@ app.post('/send-tomorrow-reminders', auth, async (req, res) => {
 });
 
 /* ============ 目錄（線上預約用） ============ */
-app.post('/publish-catalog', auth, async (req, res) => {
+app.post('/publish-catalog', auth, adminOnly, async (req, res) => {
   const cat = req.body && typeof req.body === 'object' ? req.body : {};
   await pool.query(
     `INSERT INTO catalog(id, data, updated_at) VALUES(1,$1,now())
@@ -430,10 +484,15 @@ function servePage(file, liffId) {
 app.get('/book', servePage('book.html', process.env.LIFF_BOOK_ID));
 app.get('/intake', servePage('intake.html', process.env.LIFF_INTAKE_ID));
 
-/* 統一錯誤處理：DB 或未捕捉錯誤回 500 JSON */
+/* 統一錯誤處理。body-parser 的「格式錯誤／超過大小上限」帶有 4xx status，
+   一律轉成 500 會讓呼叫端誤判為伺服器故障而重試，因此 4xx 照原樣回傳。 */
 app.use((err, req, res, next) => {
-  console.error('unhandled:', err && err.message);
   if (res.headersSent) return next(err);
+  const status = Number(err && (err.status || err.statusCode)) || 500;
+  if (status >= 400 && status < 500) {
+    return res.status(status).json({ message: status === 413 ? '內容過大' : '請求格式錯誤' });
+  }
+  console.error('unhandled:', err && err.message);
   res.status(500).json({ message: '伺服器錯誤' });
 });
 
