@@ -1358,10 +1358,62 @@ function createPatientFromLine(userId){
 }
 /* ============ Google Calendar ============ */
 function loadGsi(cb){loadLib('__gsi','https://accounts.google.com/gsi/client',function(){return typeof google!=='undefined'&&google.accounts&&google.accounts.oauth2;},function(err){if(err){showToast('Google SDK 載入失敗');return;}cb();});}
+/* ============ Google Calendar 授權（含 sessionStorage 快取） ============ */
+var GCAL_TK_KEY = 'navicare_gcal_tk';   // sessionStorage：access token，關閉分頁即消失
+var GCAL_OK_KEY = 'navicare_gcal_ok';   // localStorage：記住此瀏覽器已同意過授權
+var gcalPending = [], gcalBusy = false, gcalRetry = false;
+
+function gcalCacheGet(){
+  try{
+    var o = JSON.parse(sessionStorage.getItem(GCAL_TK_KEY) || 'null');
+    if(!o || !o.t || Date.now() >= o.e){ sessionStorage.removeItem(GCAL_TK_KEY); return null; }
+    return o;
+  }catch(e){ return null; }
+}
+function gcalCacheSet(t, e){ try{ sessionStorage.setItem(GCAL_TK_KEY, JSON.stringify({t:t, e:e})); }catch(x){} }
+function gcalCacheClear(){ gcalToken=''; gcalTokenExp=0; try{ sessionStorage.removeItem(GCAL_TK_KEY); }catch(x){} }
+function gcalHasConsented(){ try{ return gcalConsented || localStorage.getItem(GCAL_OK_KEY)==='1'; }catch(e){ return gcalConsented; } }
+function gcalMarkConsented(){ gcalConsented = true; try{ localStorage.setItem(GCAL_OK_KEY,'1'); }catch(e){} }
+
 function ensureGCal(cb){
-  if(gcalToken&&Date.now()<gcalTokenExp){cb();return;}
-  if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE')>-1){showToast('預覽模式：行事曆同步停用');return;}
-  loadGsi(function(){if(!gcalClient){gcalClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'openid email profile https://www.googleapis.com/auth/calendar.events',callback:function(r){if(r.error){if(!gcalConsented){gcalConsented=true;gcalClient.requestAccessToken({prompt:'consent'});return;}showToast('行事曆授權失敗：'+r.error);return;}gcalToken=r.access_token;gcalTokenExp=Date.now()+(Number(r.expires_in||3600)-60)*1000;gcalConsented=true;cb();}});}gcalClient.requestAccessToken({prompt:gcalConsented?'':'consent'});});
+  // 1) 記憶體 token 還有效
+  if(gcalToken && Date.now() < gcalTokenExp){ cb(); return; }
+  // 2) 從 sessionStorage 還原：重新整理頁面後一小時內都不用再授權
+  var c = gcalCacheGet();
+  if(c){ gcalToken = c.t; gcalTokenExp = c.e; cb(); return; }
+
+  if(GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE') > -1){ showToast('預覽模式：行事曆同步停用'); return; }
+
+  gcalPending.push(cb);          // 修正原本只會回呼「第一次」cb 的問題
+  if(gcalBusy) return;           // 同時多筆同步時共用一次授權結果
+  gcalBusy = true; gcalRetry = false;
+
+  loadGsi(function(){
+    if(!gcalClient){
+      gcalClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'openid email profile https://www.googleapis.com/auth/calendar.events',
+        callback: function(r){
+          if(r.error){
+            if(!gcalRetry){ gcalRetry = true; gcalClient.requestAccessToken({prompt:'consent'}); return; }
+            gcalBusy = false; gcalPending = []; gcalConsented = false;
+            try{ localStorage.removeItem(GCAL_OK_KEY); }catch(e){}
+            showToast('行事曆授權失敗：' + r.error);
+            return;
+          }
+          gcalToken    = r.access_token;
+          gcalTokenExp = Date.now() + (Number(r.expires_in || 3600) - 60) * 1000;
+          gcalCacheSet(gcalToken, gcalTokenExp);
+          gcalMarkConsented();
+          gcalBusy = false; gcalRetry = false;
+          var list = gcalPending; gcalPending = [];
+          list.forEach(function(f){ try{ f(); }catch(e){} });
+        }
+      });
+    }
+    // 已同意過就靜默取 token（不跳視窗），只有第一次才顯示同意畫面
+    gcalClient.requestAccessToken({ prompt: gcalHasConsented() ? '' : 'consent' });
+  });
 }
 function fmtTimeMin(min){var h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function calId(cidOverride){return encodeURIComponent(cidOverride||CLINIC_INFO.calendarId||'primary');}
