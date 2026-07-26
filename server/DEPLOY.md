@@ -138,6 +138,7 @@ connect-src 'self' https://navicare-api-xxxx-de.a.run.app https://www.googleapis
 | `DATABASE_URL` | ✅ | Postgres 連線字串（Cloud SQL 用 `?host=/cloudsql/...` socket）|
 | `GOOGLE_CLIENT_ID` | ✅ | 與前端相同的 OAuth Client ID（驗證 token `aud`）|
 | `ALLOWED_EMAILS` | ✅ | 逗號分隔的登入白名單（與前端 EMAIL_WHITELIST 對齊）|
+| `ADMIN_EMAILS` | 選 | 逗號分隔的管理員（須為 `ALLOWED_EMAILS` 子集）。**未設定時所有授權帳號都是管理員**。設定後，不在名單內的帳號登入即為「治療師」角色：只開放預約／病歷／衛教／排班頁，且伺服器會擋下清空資料、發布線上預約目錄、推播收據圖片等操作。角色由伺服器 `GET /me` 決定，改前端沒有用。|
 | `LINE_CHANNEL_SECRET` | ✅ | webhook 簽章驗證 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | ✅ | 推播訊息 |
 | `PUBLIC_BASE_URL` | ✅ | 本服務對外網址（收據圖片連結）|
