@@ -56,7 +56,7 @@ function init(){
   fetch('/catalog').then(function(r){return r.json();}).then(function(cat){
     CATALOG=cat&&cat.services?cat:{services:[],therapists:[]};
     var sv=$('f-svc');
-    sv.innerHTML=CATALOG.services.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'（'+s.dur+' 分鐘・NT$'+Number(s.price).toLocaleString()+'）</option>';}).join('')||'<option value="">目前無可預約項目</option>';
+    sv.innerHTML=CATALOG.services.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'（'+(Number(s.dur)||0)+' 分鐘・NT$'+Number(s.price).toLocaleString()+'）</option>';}).join('')||'<option value="">目前無可預約項目</option>';
     sv.onchange=fillTherapists;fillTherapists();
   }).catch(function(){$('f-svc').innerHTML='<option value="">讀取失敗，請稍後再試</option>';});
   var d=new Date(Date.now()+86400e3);

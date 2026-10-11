@@ -8,7 +8,7 @@
 
 ```bash
 git clone https://github.com/skyzbpt/navicare.git
-cd navicare && git checkout claude/index-html-review-r42g2e && cd server
+cd navicare/server
 bash deploy.sh          # 互動式：只需輸入 3 個密碼，其餘全自動（步驟 1–3）
 bash smoke-test.sh <部署完成印出的網址>   # 自動驗收 13 項
 ```
@@ -117,6 +117,9 @@ gcloud run services update navicare-api --region asia-east1 \
 LIFF 網址（`https://liff.line.me/2010433876-...`）不變，前端無需改 LIFF 常數。
 
 ## 步驟 6：前端切換（index.html 改兩處）
+
+> main 分支的 `index.html` 已指向 `https://navicare-api-56o6ce6uoq-de.a.run.app`（RENDER_URL、CSP 的 connect-src 與 img-src）。
+> 若實際部署的 Cloud Run 網址相同，此步驟可略過；不同時再執行 `bash scripts/switch-frontend.sh <網址>`。
 
 ```js
 // 1. RENDER_URL 常數（約 line 318）
