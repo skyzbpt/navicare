@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>線上預約｜領航物理治療所</title>
+<style>
+:root{--navy:#1a4d68;--mint:#2DC8A0;--bg:#f4f7f9;--ink:#1e293b;--slate:#64748b;--line:#e2e8f0}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif}
+body{background:var(--bg);color:var(--ink);padding-bottom:40px}
+.head{background:var(--navy);color:#fff;padding:18px 20px;font-size:17px;font-weight:700}
+.wrap{max-width:520px;margin:0 auto;padding:16px}
+.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+label{display:block;font-size:13px;font-weight:700;color:var(--navy);margin:14px 0 6px}
+label:first-child{margin-top:0}
+input,select,textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:15px;outline:none;background:#fff}
+input:focus,select:focus,textarea:focus{border-color:var(--mint)}
+.btn{width:100%;padding:14px;background:var(--mint);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:18px}
+.btn:disabled{opacity:.5}
+.hint{font-size:12px;color:var(--slate);margin-top:6px}
+.ok{background:#fff;border-radius:14px;padding:40px 20px;text-align:center}
+.ok .big{font-size:44px;margin-bottom:12px}
+.err{color:#c62828;font-size:13px;margin-top:10px;display:none}
+</style>
+</head>
+<body>
+<div class="head">領航物理治療所｜線上預約</div>
+<div class="wrap">
+  <div class="card" id="form">
+    <label>姓名 *</label><input id="f-name" maxlength="50" placeholder="您的姓名">
+    <label>聯絡電話 *</label><input id="f-phone" maxlength="20" inputmode="tel" placeholder="09xxxxxxxx">
+    <label>服務項目 *</label><select id="f-svc"></select>
+    <div class="hint" id="svc-info"></div>
+    <label>治療師 *</label><select id="f-t"></select>
+    <label>日期 *</label><input id="f-date" type="date">
+    <label>時間 *</label><select id="f-time"></select>
+    <label>備註</label><textarea id="f-note" rows="2" maxlength="300" placeholder="想告訴我們的事（選填）"></textarea>
+    <button class="btn" id="f-submit" onclick="submitBooking()">送出預約</button>
+    <div class="err" id="f-err"></div>
+    <div class="hint" style="margin-top:12px">送出後由診所確認時段，確認結果將以 LINE 或電話通知您。</div>
+  </div>
+  <div class="ok" id="done" style="display:none">
+    <div class="big">✅</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:8px">預約已送出</div>
+    <div style="font-size:13px;color:var(--slate)">診所確認時段後會通知您，感謝您的預約！</div>
+  </div>
+</div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+var LIFF_ID='__LIFF_ID__';
+var CATALOG={services:[],therapists:[]};
+var LINE_PROFILE=null;
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function init(){
+  fetch('/catalog').then(function(r){return r.json();}).then(function(cat){
+    CATALOG=cat&&cat.services?cat:{services:[],therapists:[]};
+    var sv=$('f-svc');
+    sv.innerHTML=CATALOG.services.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'（'+s.dur+' 分鐘・NT$'+Number(s.price).toLocaleString()+'）</option>';}).join('')||'<option value="">目前無可預約項目</option>';
+    sv.onchange=fillTherapists;fillTherapists();
+  }).catch(function(){$('f-svc').innerHTML='<option value="">讀取失敗，請稍後再試</option>';});
+  var d=new Date(Date.now()+86400e3);
+  $('f-date').min=d.toISOString().slice(0,10);
+  $('f-date').value=d.toISOString().slice(0,10);
+  var opts=[];for(var m=8*60;m<=20*60+30;m+=30){opts.push('<option>'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+'</option>');}
+  $('f-time').innerHTML=opts.join('');
+  if(LIFF_ID){
+    liff.init({liffId:LIFF_ID}).then(function(){
+      if(liff.isLoggedIn())return liff.getProfile();
+    }).then(function(p){if(p)LINE_PROFILE=p;}).catch(function(){});
+  }
+}
+function fillTherapists(){
+  var svcId=$('f-svc').value;
+  var svc=CATALOG.services.find(function(s){return s.id===svcId;});
+  $('svc-info').textContent=svc&&svc.desc?svc.desc:'';
+  var list=CATALOG.therapists||[];
+  if(svc&&svc.ts&&svc.ts.length)list=list.filter(function(t){return svc.ts.indexOf(t.id)>-1;});
+  $('f-t').innerHTML=list.map(function(t){return '<option value="'+esc(t.id)+'">'+esc(t.name)+(t.title?'｜'+esc(t.title):'')+'</option>';}).join('')||'<option value="">無可指定治療師</option>';
+}
+function submitBooking(){
+  var name=$('f-name').value.trim(),phone=$('f-phone').value.trim();
+  var err=$('f-err');err.style.display='none';
+  if(!name||!/^[\d()\-+\s]{5,20}$/.test(phone)){err.textContent='請填寫姓名與有效電話';err.style.display='block';return;}
+  if(!$('f-svc').value||!$('f-t').value){err.textContent='請選擇服務與治療師';err.style.display='block';return;}
+  var btn=$('f-submit');btn.disabled=true;btn.textContent='送出中…';
+  fetch('/public-booking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    name:name,phone:phone,svc:$('f-svc').value,t:$('f-t').value,
+    date:$('f-date').value,time:$('f-time').value,note:$('f-note').value.trim(),
+    lineUserId:LINE_PROFILE?LINE_PROFILE.userId:'',linePictureUrl:LINE_PROFILE?(LINE_PROFILE.pictureUrl||''):''
+  })}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){
+    if(res.ok){$('form').style.display='none';$('done').style.display='block';}
+    else{err.textContent=(res.j&&res.j.message)||'送出失敗，請再試一次';err.style.display='block';btn.disabled=false;btn.textContent='送出預約';}
+  }).catch(function(){err.textContent='連線失敗，請再試一次';err.style.display='block';btn.disabled=false;btn.textContent='送出預約';});
+}
+init();
+</script>
+</body>
+</html>
