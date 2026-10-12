@@ -25,6 +25,9 @@ chk "/intake LIFF 頁 200"     200 "$(code "$B/intake")"
 echo "── 認證防線（應被擋）──"
 chk "無 token 存快照 401"     401 "$(code "$B/clinic-data")"
 chk "壞 token 存快照 401"     401 "$(code -H 'Authorization: Bearer xxx' "$B/clinic-data")"
+chk "無 token 查版本 401"     401 "$(code "$B/clinic-rev")"
+chk "排程端點無密鑰 404"      404 "$(code -X POST "$B/cron/tomorrow-reminders")"
+chk "排程端點錯密鑰 404"      404 "$(code -X POST -H 'X-Cron-Secret: wrong' "$B/cron/tomorrow-reminders")"
 echo "── SSRF 防護（應被擋）──"
 chk "proxy 非 LINE 網域 400"  400 "$(code "$B/proxy-image?url=https://evil.com/x.jpg")"
 chk "proxy 內網 IP 400"       400 "$(code "$B/proxy-image?url=http://169.254.169.254/")"
@@ -37,4 +40,4 @@ echo
 if [ "$fail" -eq 0 ]; then printf '\033[32m全部 %d 項通過 ✓\033[0m\n' "$pass";
 else printf '\033[31m%d 項失敗 / %d 項通過\033[0m — 檢查 Cloud Run 日誌：gcloud run services logs read navicare-api --region asia-east1\n' "$fail" "$pass"; exit 1; fi
 echo
-echo "註：需登入 token 的端點（快照存取、推播、提醒）請於前端切換後，用第 8 步驗收清單手動確認。"
+echo "註：需登入 token 的端點（快照存取、推播、提醒）請於前端切換後，依 DEPLOY.md 步驟 7 的驗收清單手動確認。"
