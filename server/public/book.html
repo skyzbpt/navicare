@@ -87,7 +87,7 @@ function submitBooking(){
   fetch('/public-booking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     name:name,phone:phone,svc:$('f-svc').value,t:$('f-t').value,
     date:$('f-date').value,time:$('f-time').value,note:$('f-note').value.trim(),
-    lineUserId:LINE_PROFILE?LINE_PROFILE.userId:'',linePictureUrl:LINE_PROFILE?(LINE_PROFILE.pictureUrl||''):''
+    lineUserId:LINE_PROFILE?LINE_PROFILE.userId:'',linePictureUrl:LINE_PROFILE?(LINE_PROFILE.pictureUrl||''):'',lineDisplayName:LINE_PROFILE?(LINE_PROFILE.displayName||''):''
   })}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){
     if(res.ok){$('form').style.display='none';$('done').style.display='block';}
     else{err.textContent=(res.j&&res.j.message)||'送出失敗，請再試一次';err.style.display='block';btn.disabled=false;btn.textContent='送出預約';}

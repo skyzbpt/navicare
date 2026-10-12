@@ -441,7 +441,7 @@ app.post('/public-booking', async (req, res) => {
     name: cleanStr(d.name, 50), phone: normPhone(d.phone),
     date: cleanStr(d.date, 10), time: cleanStr(d.time, 5),
     t: cleanStr(d.t, 30), svc: cleanStr(d.svc, 30), note: cleanStr(d.note, 300),
-    lineUserId: cleanStr(d.lineUserId, 50), linePictureUrl: cleanStr(d.linePictureUrl, 500),
+    lineUserId: cleanStr(d.lineUserId, 50), linePictureUrl: cleanStr(d.linePictureUrl, 500), lineDisplayName: cleanStr(d.lineDisplayName, 50),
   };
   if (!data.name || !PHONE_RE.test(data.phone)) return res.status(400).json({ message: '請填寫姓名與有效電話' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || !/^\d{2}:\d{2}$/.test(data.time)) return res.status(400).json({ message: '日期或時間格式錯誤' });
@@ -462,7 +462,7 @@ app.post('/public-intake', async (req, res) => {
     bodyParts: Array.isArray(d.bodyParts) ? d.bodyParts.slice(0, 20).map(x => cleanStr(x, 20)) : [],
     medicalHistory: cleanStr(d.medicalHistory, 1000), injuryHistory: cleanStr(d.injuryHistory, 1000),
     surgeryHistory: cleanStr(d.surgeryHistory, 1000), exerciseHabit: cleanStr(d.exerciseHabit, 1000),
-    lineUserId: cleanStr(d.lineUserId, 50), linePictureUrl: cleanStr(d.linePictureUrl, 500),
+    lineUserId: cleanStr(d.lineUserId, 50), linePictureUrl: cleanStr(d.linePictureUrl, 500), lineDisplayName: cleanStr(d.lineDisplayName, 50),
   };
   if (!data.name || !PHONE_RE.test(data.phone)) return res.status(400).json({ message: '請填寫姓名與有效電話' });
   await pool.query(`INSERT INTO submissions(kind, data) VALUES('intake',$1)`, [data]);

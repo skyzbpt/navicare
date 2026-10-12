@@ -101,7 +101,7 @@ function submitIntake(){
     vas:Number($('q-vas').value),bodyParts:picked('q-body'),
     medicalHistory:$('q-medical').value.trim(),injuryHistory:$('q-injury').value.trim(),
     surgeryHistory:$('q-surgery').value.trim(),exerciseHabit:$('q-exercise').value.trim(),
-    lineUserId:LINE_PROFILE?LINE_PROFILE.userId:'',linePictureUrl:LINE_PROFILE?(LINE_PROFILE.pictureUrl||''):''
+    lineUserId:LINE_PROFILE?LINE_PROFILE.userId:'',linePictureUrl:LINE_PROFILE?(LINE_PROFILE.pictureUrl||''):'',lineDisplayName:LINE_PROFILE?(LINE_PROFILE.displayName||''):''
   })}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){
     if(res.ok){$('form').style.display='none';$('done').style.display='block';window.scrollTo(0,0);}
     else{err.textContent=(res.j&&res.j.message)||'送出失敗，請再試一次';err.style.display='block';btn.disabled=false;btn.textContent='送出問卷';}

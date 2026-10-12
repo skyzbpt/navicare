@@ -399,6 +399,8 @@ var PT_PACKAGES={};
 var PT_PKG_ID=5000;
 /* 線上預約因時段衝突／非班表時段而無法自動排入的紀錄（保留給櫃台人工處理，避免資料被確認後消失）*/
 var SKIPPED_BK=[];
+/* 待確認的線上資料：線上表單無法驗證填寫者身分，會改到「既有病患」的 LINE 綁定與重填的初診問卷，先列在這裡由櫃台確認 */
+var PENDING_REVIEW=[],REVIEW_MAX=100;
 var RENDER_URL='https://navicare-api-56o6ce6uoq-de.a.run.app';
 /* 已發布到線上預約的服務／課程 ID（null＝全部發布）*/
 var PUBLISHED_SVC_IDS=null;
@@ -682,7 +684,7 @@ function flashTitle(text){try{if(_origTitle===null)_origTitle=document.title;if(
 function stopTitleFlash(){if(_titleFlashTimer){clearInterval(_titleFlashTimer);_titleFlashTimer=null;}if(_origTitle!==null)document.title=_origTitle;}
 document.addEventListener('visibilitychange',function(){if(!document.hidden)stopTitleFlash();});
 window.addEventListener('focus',stopTitleFlash);
-function notifyUnreadCount(){return NOTIFY_LOG.filter(function(n){return !n.read;}).length+SKIPPED_BK.length;}
+function notifyUnreadCount(){return NOTIFY_LOG.filter(function(n){return !n.read;}).length+SKIPPED_BK.length+PENDING_REVIEW.length;}
 function notifyBellHTML(){
   var n=notifyUnreadCount();
   var badge=n>0?'<span class="notify-badge">'+(n>99?'99+':n)+'</span>':'';
@@ -847,6 +849,46 @@ function notifyRowHTML(n){
     +'<div class="row" style="gap:6px;align-items:center;flex-shrink:0">'+dot+act
     +(n.read?'':'<button class="btn sm ghost" onclick="markNotifyRead(\''+escJs(n.id)+'\')">已讀</button>')+'</div></div>';
 }
+/* ── 待確認的線上資料（既有病患的 LINE 綁定、重填的初診問卷）──
+   同一位病患同一類只保留最新一筆；清單上限 REVIEW_MAX，滿了匯入端會先不確認、留在伺服器 */
+function queueReview(r){
+  if(!r||!r.phone)return false;
+  PENDING_REVIEW=PENDING_REVIEW.filter(function(x){return !(x.kind===r.kind&&x.phone===r.phone&&(r.kind==='intake'||x.lineUserId===r.lineUserId));});
+  if(PENDING_REVIEW.length>=REVIEW_MAX)return false;
+  r.id='rv'+Date.now()+Math.floor(Math.random()*1e6);r.at=new Date().toISOString();
+  PENDING_REVIEW.unshift(r);return true;
+}
+function reviewPanelHTML(){
+  if(!PENDING_REVIEW.length)return '';
+  return '<div style="border:1px solid #bae6fd;background:#f0f9ff;border-radius:12px;padding:12px 14px;margin-bottom:12px"><b style="color:#0c4a6e">待確認的線上資料（'+PENDING_REVIEW.length+'）</b><div class="t-sub" style="margin:2px 0 6px">線上表單無法確認填寫者是不是本人（知道電話就能送出）。以下會更動既有病患，請確認是本人再套用。</div>'+
+    PENDING_REVIEW.map(function(r){
+      var p=getPatient(r.phone)||{};var who='<div style="font-weight:700">'+esc(p.name||r.name||'（未填姓名）')+' <span class="t-sub">'+esc(r.phone)+'</span></div>';
+      var id=escJs(r.id);
+      if(r.kind==='bind')return '<div style="padding:9px 0;border-top:1px dashed #bae6fd"><div class="row" style="justify-content:space-between;gap:6px"><div class="row" style="gap:8px;min-width:0">'+avatarEl(r.lineName||'L',r.linePictureUrl,30)+'<div style="min-width:0">'+who+'<div class="t-sub">線上表單帶有 LINE 帳號'+(r.lineName?'「'+esc(r.lineName)+'」':'')+'，要綁定到這位病患嗎？</div></div></div>'+
+        '<div class="row" style="gap:5px;flex-shrink:0"><button class="btn sm" onclick="confirmReview(\''+id+'\')">確認綁定</button><button class="btn sm gray" onclick="dismissReview(\''+id+'\')">忽略</button></div></div></div>';
+      return '<div style="padding:9px 0;border-top:1px dashed #bae6fd"><div class="row" style="justify-content:space-between;gap:6px"><div style="min-width:0">'+who+'<div class="t-sub">重新填寫了初診問卷，內容與目前的不同</div></div>'+
+        '<div class="row" style="gap:5px;flex-shrink:0"><button class="btn sm ghost" onclick="viewReviewIntake(\''+id+'\')">查看</button><button class="btn sm" onclick="confirmReview(\''+id+'\')">採用新問卷</button><button class="btn sm gray" onclick="dismissReview(\''+id+'\')">忽略</button></div></div></div>';
+    }).join('')+'</div>';
+}
+function _afterReviewChange(){refreshNotifyBell();rebuildNotifyPanel();refreshView();saveAll();}
+function confirmReview(id){
+  var r=PENDING_REVIEW.find(function(x){return x.id===id;});if(!r)return;
+  var p=getPatient(r.phone);
+  if(!p){showToast('找不到這位病患（可能已刪除或改了電話），已移出清單');PENDING_REVIEW=PENDING_REVIEW.filter(function(x){return x.id!==id;});_afterReviewChange();return;}
+  if(r.kind==='bind'){
+    if(PATIENTS.some(function(x){return x!==p&&x.lineId===r.lineUserId;})){showToast('這個 LINE 帳號已綁定在其他病患，請先到病患資料解除');return;}
+    if(p.lineId&&p.lineId!==r.lineUserId&&!confirm('這位病患已綁定其他 LINE 帳號，要改綁成這一個嗎？'))return;
+    p.lineId=r.lineUserId;p.line=true;if(r.linePictureUrl&&!p.avatar)p.avatar=r.linePictureUrl;
+    showToast('已綁定 LINE');
+  }else{
+    if(!isPlainObj(r.data)){showToast('問卷資料不完整');return;}
+    INTAKE_DATA[ptKey(p)]=r.data;showToast('已採用新的初診問卷');
+  }
+  PENDING_REVIEW=PENDING_REVIEW.filter(function(x){return x.id!==id;});
+  _afterReviewChange();
+}
+function dismissReview(id){PENDING_REVIEW=PENDING_REVIEW.filter(function(x){return x.id!==id;});_afterReviewChange();}
+function viewReviewIntake(id){var r=PENDING_REVIEW.find(function(x){return x.id===id;});if(r&&isPlainObj(r.data))viewIntake(r.phone,r.data);}
 /* 待人工處理：線上預約因時段衝突等原因未自動排入 */
 function skippedPanelHTML(){
   if(!SKIPPED_BK.length)return '';
@@ -863,12 +905,12 @@ function bookSkipped(id){
   showToast('已帶入線上預約資料，請調整日期或時段後建立');
 }
 function notifyPanelBodyHTML(){
-  var sk=skippedPanelHTML();
+  var sk=reviewPanelHTML()+skippedPanelHTML();
   if(!NOTIFY_LOG.length&&!sk){
     return '<div class="empty" style="padding:24px">目前沒有通知</div>';
   }
   return sk+NOTIFY_LOG.map(notifyRowHTML).join('')
-    +'<div class="banner info" style="margin-top:14px"><span>i</span><div>通知最多保留最近 5 筆。點「匯入全部」可把待處理的線上送出拉進後台；初診更新病患資料、預約排入行事曆（衝突時段除外）。</div></div>';
+    +'<div class="banner info" style="margin-top:14px"><span>i</span><div>通知最多保留最近 5 筆。點「匯入全部」可把待處理的線上送出拉進後台：新個案自動建立病患與綁定 LINE、預約排入行事曆（衝突時段除外）；會更動既有病患的 LINE 綁定或重填問卷，列入「待確認」由櫃台確認。</div></div>';
 }
 function rebuildNotifyPanel(){
   setHTML('notifyBody',notifyPanelBodyHTML());
@@ -1114,7 +1156,7 @@ function triggerGoogleLogin(){
 /* ============ 手動備份 / 還原 ============ */
 function buildSnapshot(){
   /* EMAIL_WHITELIST 刻意排除：白名單屬伺服器端存取控制設定，不應寫入可下載的備份檔 */
-  return {SERVICES:SERVICES,SVC_ID:SVC_ID,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,NOTIFY_LOG:NOTIFY_LOG,SKIPPED_BK:SKIPPED_BK,_seenSubIds:_seenSubIds,_lastSeen:_lastSeen,_backupAt:new Date().toISOString(),_version:1};
+  return {SERVICES:SERVICES,SVC_ID:SVC_ID,THERAPISTS:THERAPISTS,TC:TC,TN:TN,T_SVC_RATES:T_SVC_RATES,BOOKINGS:BOOKINGS,BOOKING_ID:BOOKING_ID,BK_LOG:BK_LOG,PATIENTS:PATIENTS,INTAKE_DATA:INTAKE_DATA,PT_TAG_DATA:PT_TAG_DATA,PT_TAG_MAP:PT_TAG_MAP,ALL_PT_TAGS:ALL_PT_TAGS,SOAP_NOTES:SOAP_NOTES,SOAP_ID:SOAP_ID,PAYMENTS:PAYMENTS,PAYMENT_ID:PAYMENT_ID,PACKAGES:PACKAGES,PKG_ID:PKG_ID,PT_PACKAGES:PT_PACKAGES,PT_PKG_ID:PT_PKG_ID,EDU_DATA:EDU_DATA,EDU_ID:EDU_ID,EDU_CATS:EDU_CATS,EDU_SENT:EDU_SENT,CLINIC_INFO:CLINIC_INFO,STAMPS:STAMPS,STAMP_T:STAMP_T,CLINIC_LOGO:CLINIC_LOGO,LOGIN_LOGO:LOGIN_LOGO,REMINDER_TEMPLATE:REMINDER_TEMPLATE,PUBLISHED_SVC_IDS:PUBLISHED_SVC_IDS,PUBLISHED_PKG_IDS:PUBLISHED_PKG_IDS,NOTIFY_LOG:NOTIFY_LOG,SKIPPED_BK:SKIPPED_BK,PENDING_REVIEW:PENDING_REVIEW,_seenSubIds:_seenSubIds,_lastSeen:_lastSeen,_backupAt:new Date().toISOString(),_version:1};
 }
 function doBackup(){
   try{
@@ -1443,9 +1485,9 @@ function _saveNow(){
    只有同一筆資料兩邊都改了，才列為衝突。 */
 var MERGE_VOLATILE={_backupAt:1,_lastSeen:1,_seenSubIds:1,NOTIFY_LOG:1};
 var MERGE_COUNTERS={SVC_ID:1,BOOKING_ID:1,SOAP_ID:1,PAYMENT_ID:1,PKG_ID:1,PT_PKG_ID:1,EDU_ID:1};
-var MERGE_LISTS={BOOKINGS:1,SOAP_NOTES:1,PAYMENTS:1,PACKAGES:1,SERVICES:1,EDU_DATA:1,THERAPISTS:1,SKIPPED_BK:1,PATIENTS:1};
+var MERGE_LISTS={BOOKINGS:1,SOAP_NOTES:1,PAYMENTS:1,PACKAGES:1,SERVICES:1,EDU_DATA:1,THERAPISTS:1,SKIPPED_BK:1,PENDING_REVIEW:1,PATIENTS:1};
 var MERGE_RENUMBER={BOOKINGS:'BOOKING_ID',PAYMENTS:'PAYMENT_ID',SOAP_NOTES:'SOAP_ID'};
-var MERGE_NAMES={BOOKINGS:'預約',PATIENTS:'病患',SOAP_NOTES:'SOAP 病歷',PAYMENTS:'消費記錄',INTAKE_DATA:'初診問卷',PT_PACKAGES:'病患課程',PACKAGES:'課程方案',SERVICES:'服務項目',THERAPISTS:'治療師與班表',EDU_DATA:'衛教內容',EDU_SENT:'衛教發送紀錄',PT_TAG_MAP:'病患標籤',PT_TAG_DATA:'病患標籤',ALL_PT_TAGS:'標籤設定',T_SVC_RATES:'薪資抽成',CLINIC_INFO:'診所資料',SKIPPED_BK:'待人工處理',BK_LOG:'預約紀錄'};
+var MERGE_NAMES={BOOKINGS:'預約',PATIENTS:'病患',SOAP_NOTES:'SOAP 病歷',PAYMENTS:'消費記錄',INTAKE_DATA:'初診問卷',PT_PACKAGES:'病患課程',PACKAGES:'課程方案',SERVICES:'服務項目',THERAPISTS:'治療師與班表',EDU_DATA:'衛教內容',EDU_SENT:'衛教發送紀錄',PT_TAG_MAP:'病患標籤',PT_TAG_DATA:'病患標籤',ALL_PT_TAGS:'標籤設定',T_SVC_RATES:'薪資抽成',CLINIC_INFO:'診所資料',SKIPPED_BK:'待人工處理',PENDING_REVIEW:'待確認的線上資料',BK_LOG:'預約紀錄'};
 function _cloneJ(v){return v===undefined?undefined:JSON.parse(JSON.stringify(v));}
 /* 比對用的標準化字串：物件鍵依字母排序。伺服器的 PostgreSQL JSONB 不保留鍵的順序，
    同一筆資料往返一次後 JSON.stringify 結果就會不同，直接比字串會把沒改的資料誤判成「兩邊都改了」 */
@@ -1633,6 +1675,7 @@ function applySnapshot(s,replace){
   obj(_lastSeen,s._lastSeen);
   if(A(s.NOTIFY_LOG))NOTIFY_LOG=s.NOTIFY_LOG.filter(O).slice(0,5);
   if(A(s.SKIPPED_BK))SKIPPED_BK=s.SKIPPED_BK.filter(O).slice(0,SKIPPED_MAX);
+if(A(s.PENDING_REVIEW))PENDING_REVIEW=s.PENDING_REVIEW.filter(O).slice(0,REVIEW_MAX);
   normalizeData();
 }
 function _fetchSnapshot(){
@@ -1687,6 +1730,14 @@ function normalizeData(){
   Object.keys(STAMP_T).forEach(function(k){if(!isValidImageUrl(STAMP_T[k]))delete STAMP_T[k];});
   NOTIFY_LOG=NOTIFY_LOG.filter(function(n){return RE_ID.test(String(n.id||''))&&['care','bk','intake'].indexOf(n.kind)>-1;});
   NOTIFY_LOG.forEach(function(n){n.count=Number(n.count)||0;});
+  /* 待確認清單會拿來綁定 LINE、取代問卷：只接受格式正確的項目，問卷內容重新經過與線上送出相同的檢查 */
+  PENDING_REVIEW=PENDING_REVIEW.filter(function(r){return isPlainObj(r)&&(r.kind==='bind'||r.kind==='intake')&&RE_PHONE.test(String(r.phone||''))&&RE_ID.test(String(r.id||''));});
+  PENDING_REVIEW.forEach(function(r){
+    r.name=cleanText(r.name,40);
+    if(r.kind==='bind'){if(!RE_LINE_UID.test(String(r.lineUserId||'')))r.lineUserId='';r.linePictureUrl=proxyAvatar(r.linePictureUrl)?String(r.linePictureUrl):'';r.lineName=cleanText(r.lineName,40);}
+    else r.data=isPlainObj(r.data)?cleanIntake(r.data):null;
+  });
+  PENDING_REVIEW=PENDING_REVIEW.filter(function(r){return r.kind==='bind'?!!r.lineUserId:!!r.data;});
 }
 
 /* ============ LINE 推播 ============ */
@@ -1865,6 +1916,7 @@ function cleanIntake(d){
   out.gender=(d.gender==='male'||d.gender==='female')?d.gender:'';
   out.lineUserId=RE_LINE_UID.test(String(d.lineUserId||''))?d.lineUserId:'';
   out.linePictureUrl=proxyAvatar(d.linePictureUrl)?String(d.linePictureUrl):'';
+  out.lineName=out.lineUserId?cleanText(d.lineDisplayName,40):'';
   if(d.vas!=null){var vas=Number(d.vas);out.vas=isFinite(vas)?Math.max(0,Math.min(10,vas)):null;}
   if(out.emergencyPhone)out.emergencyPhone=normPhone(out.emergencyPhone);
   if(out.emergencyPhone&&!RE_PHONE.test(out.emergencyPhone))out.emergencyPhone=cleanText(out.emergencyPhone,20).replace(/[^\d()\-+\s]/g,'');
@@ -1881,7 +1933,8 @@ function cleanBookingSub(d){
   var tid=String(d.t||'');if(!THERAPISTS.some(function(x){return x.id===tid;}))tid=(THERAPISTS[0]&&THERAPISTS[0].id)||'';
   if(!tid)return null;
   return {phone:phone,date:d.date,time:time,svc:svc,svcOk:SERVICES.some(function(x){return x.id===svc;}),t:tid,name:cleanText(d.name,40).trim(),note:cleanText(d.note,500),
-    lineUserId:RE_LINE_UID.test(String(d.lineUserId||''))?d.lineUserId:'',linePictureUrl:proxyAvatar(d.linePictureUrl)?String(d.linePictureUrl):''};
+    lineUserId:RE_LINE_UID.test(String(d.lineUserId||''))?d.lineUserId:'',linePictureUrl:proxyAvatar(d.linePictureUrl)?String(d.linePictureUrl):'',
+    lineName:RE_LINE_UID.test(String(d.lineUserId||''))?cleanText(d.lineDisplayName,40):''};
 }
 var SKIPPED_MAX=100;
 /* 依線上送出資料找出或建立病患，並補上 LINE 綁定；回傳 true 代表新建病患 */
@@ -1889,7 +1942,8 @@ function bindPatientFromSub(d){
   var p=getPatient(d.phone)||(d.lineUserId?PATIENTS.find(function(x){return x.lineId===d.lineUserId;}):null);
   if(!p){PATIENTS.push({phone:d.phone,name:d.name||'',dob:'',idNum:'',gender:'',line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''});return true;}
   if(!p.phone){migratePatientKey(ptKey(p),d.phone);p.phone=d.phone;}
-  if(d.lineUserId&&!p.lineId&&!PATIENTS.some(function(x){return x!==p&&x.lineId===d.lineUserId;})){p.lineId=d.lineUserId;p.line=true;if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;}
+  /* 既有病患：線上表單的 LINE 帳號無法驗證是不是本人（知道電話就能送），不自動綁定，列入待確認 */
+  if(d.lineUserId&&!p.lineId)queueReview({kind:'bind',phone:ptKey(p),name:d.name,lineUserId:d.lineUserId,linePictureUrl:d.linePictureUrl,lineName:d.lineName});
   return false;
 }
 var _pulling=false;
@@ -1901,19 +1955,27 @@ function pullSubmissions(silent){
   fetch(RENDER_URL+'/pending-submissions').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     var bks=(data&&Array.isArray(data.bookings))?data.bookings:[];var ins=(data&&Array.isArray(data.intakes))?data.intakes:[];
     if(!bks.length&&!ins.length){if(!silent)showToast('目前沒有待處理的線上送出');return;}
-    var ackIds=[],newBkIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0,badN=0,dupN=0,heldN=0;
+    var ackIds=[],newBkIds=[],newBk=0,newIntake=0,newPt=0,skipBk=0,badN=0,dupN=0,heldN=0,_rv0=PENDING_REVIEW.length;
     ins.forEach(function(it){
-      if(!it||it.id==null)return;ackIds.push(it.id);
-      var d=cleanIntake(it.data);if(!d){badN++;return;}
-      INTAKE_DATA[d.phone]=d;
+      if(!it||it.id==null)return;
+      var d=cleanIntake(it.data);if(!d){badN++;ackIds.push(it.id);return;}
       var p=getPatient(d.phone)||(d.lineUserId?PATIENTS.find(function(x){return x.lineId===d.lineUserId;}):null);
       var isNewPt=!p;
+      /* 線上表單沒有身分驗證（知道電話就能填），會改到既有病患的部分都先列入「待確認」：
+         重填的問卷內容與現有不同、LINE 帳號要綁到既有病患；待確認清單已滿時這筆先不確認，留在伺服器 */
+      var oldIt=!isNewPt?INTAKE_DATA[d.phone]:null;
+      var needIntakeReview=!!(oldIt&&isPlainObj(oldIt)&&_canon(oldIt)!==_canon(d));
+      var needBindReview=!isNewPt&&!!d.lineUserId&&!p.lineId;
+      if((needIntakeReview||needBindReview)&&PENDING_REVIEW.length>=REVIEW_MAX){heldN++;return;}
+      ackIds.push(it.id);
       if(!p){p={phone:d.phone,line:!!d.lineUserId,lineId:d.lineUserId||'',avatar:d.linePictureUrl||'',note:''};PATIENTS.push(p);newPt++;}
       else if(!p.phone){migratePatientKey(ptKey(p),d.phone);p.phone=d.phone;}
-      /* 線上表單沒有身分驗證（知道電話就能填）：既有病患只補空白欄位，不覆蓋櫃台建立的姓名、生日、身分證字號、性別 */
+      /* 既有病患只補空白欄位，不覆蓋櫃台建立的姓名、生日、身分證字號、性別 */
       ['name','dob','idNum','gender'].forEach(function(f){if(d[f]&&(isNewPt||!p[f]))p[f]=d[f];});
-      if(d.lineUserId&&!p.lineId){p.lineId=d.lineUserId;p.line=true;}
-      if(d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;
+      if(needIntakeReview)queueReview({kind:'intake',phone:d.phone,name:d.name,data:d});
+      else INTAKE_DATA[d.phone]=d;
+      if(needBindReview)queueReview({kind:'bind',phone:d.phone,name:d.name,lineUserId:d.lineUserId,linePictureUrl:d.linePictureUrl,lineName:d.lineName});
+      if(isNewPt&&d.linePictureUrl&&!p.avatar)p.avatar=d.linePictureUrl;
       newIntake++;
     });
     var today=todayStr();
@@ -1939,7 +2001,7 @@ function pullSubmissions(silent){
         /* 清單已滿時不確認這筆，讓它留在伺服器等清出空間，避免大量垃圾送出把真實個案擠掉 */
         if(SKIPPED_BK.length>=SKIPPED_MAX){heldN++;return;}
         skipBk++;ackIds.push(bk.id);
-        SKIPPED_BK.unshift({id:'sk'+Date.now()+Math.floor(Math.random()*1e6),sub:bk.id,name:d.name,phone:d.phone,date:d.date,time:d.time,svc:d.svc,t:tid,note:d.note,why:why,lineUserId:d.lineUserId,linePictureUrl:d.linePictureUrl,at:new Date().toISOString()});
+        SKIPPED_BK.unshift({id:'sk'+Date.now()+Math.floor(Math.random()*1e6),sub:bk.id,name:d.name,phone:d.phone,date:d.date,time:d.time,svc:d.svc,t:tid,note:d.note,why:why,lineUserId:d.lineUserId,linePictureUrl:d.linePictureUrl,lineName:d.lineName,at:new Date().toISOString()});
         return;
       }
       ackIds.push(bk.id);
@@ -1951,8 +2013,9 @@ function pullSubmissions(silent){
       newBk++;
     });
     var parts=[];if(newBk)parts.push('預約 '+newBk+' 筆');if(newIntake)parts.push('初診表 '+newIntake+' 份');if(newPt)parts.push('新增病患 '+newPt+' 位');
-    var tail=(skipBk?'\n'+skipBk+' 筆預約無法自動排入，已列入通知「待人工處理」':'')+(badN?'\n'+badN+' 筆資料格式不符已略過':'')+(heldN?'\n待人工處理清單已滿，'+heldN+' 筆暫留伺服器，處理完清單後會再匯入':'');
-    if(parts.length||skipBk||heldN){
+    var reviewN=Math.max(0,PENDING_REVIEW.length-_rv0);
+    var tail=(skipBk?'\n'+skipBk+' 筆預約無法自動排入，已列入通知「待人工處理」':'')+(reviewN?'\n'+reviewN+' 筆會更動既有病患（LINE 綁定／重填問卷），已列入通知「待確認」':'')+(badN?'\n'+badN+' 筆資料格式不符已略過':'')+(heldN?'\n待處理清單已滿，'+heldN+' 筆暫留伺服器，處理完清單後會再匯入':'');
+    if(parts.length||skipBk||heldN||reviewN){
       saveAll();
       showToast((parts.length?((silent?'自動匯入線上送出：':'已匯入：')+parts.join('、')):'')+tail);
       if(_curView==='bookings')renderCal();else if(_curView==='patients'||_curView==='dashboard')go(_curView);
@@ -2153,7 +2216,7 @@ function submitBk(){
   BOOKINGS.push(b);BK_LOG[id]=[new Date().toLocaleString('zh-TW',{hour12:false}).slice(0,16)+' 預約成立'];
   /* 由「待人工處理」建立：沿用線上送出的 LINE 資訊綁定病患，與自動匯入一致 */
   var _skRec=_fromSkipped?SKIPPED_BK.find(function(k){return k.id===_fromSkipped;}):null;
-  if(_skRec&&_skRec.phone===phone)bindPatientFromSub({phone:phone,name:name,lineUserId:RE_LINE_UID.test(String(_skRec.lineUserId||''))?_skRec.lineUserId:'',linePictureUrl:proxyAvatar(_skRec.linePictureUrl)?_skRec.linePictureUrl:''});
+  if(_skRec&&_skRec.phone===phone)bindPatientFromSub({phone:phone,name:name,lineUserId:RE_LINE_UID.test(String(_skRec.lineUserId||''))?_skRec.lineUserId:'',linePictureUrl:proxyAvatar(_skRec.linePictureUrl)?_skRec.linePictureUrl:'',lineName:cleanText(_skRec.lineName,40)});
   else if(!getPatient(phone))PATIENTS.push({phone:phone,name:name,dob:'',idNum:'',gender:'',line:false,lineId:'',note:''});
   var notify=document.getElementById('nb-line')&&document.getElementById('nb-line').checked;
   if(_fromSkipped){var _sk=_fromSkipped;SKIPPED_BK=SKIPPED_BK.filter(function(k){return k.id!==_sk;});_fromSkipped=null;refreshNotifyBell();}
@@ -2449,8 +2512,9 @@ function intakeLink(name,ph){
   modal('<div class="modal-head" style="background:var(--navy)">發送初診問卷<button class="x" aria-label="關閉" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="font-size:13px;margin-bottom:12px">傳送初診問卷給 <b>'+esc(name)+'</b></div>'+lineBlock+'<div class="sec-label">問卷連結</div><div style="background:var(--navy-l);border-radius:10px;padding:12px;font-size:12px;word-break:break-all;font-family:monospace">'+esc(url)+'</div></div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button><button class="btn ghost" onclick="copyText(LIFF_INTAKE_URL)">複製連結</button></div>');
 }
 function sendIntakeLine(ph){var p=getPatient(ph);if(!p||!p.lineId){showToast('此病患未綁定 LINE');return;}var url=LIFF_INTAKE_URL;var msg='【領航物理治療所】\n'+p.name+' 您好 👋\n為了讓首次療程更順利，請於就診前填寫初診問卷：\n\n👉 '+url+'\n\n約需 3 分鐘，感謝您的配合！';sendLineMsg(p.lineId,msg,function(){closeModal();});}
-function viewIntake(ph){
-  var d=INTAKE_DATA[ph];if(!d){showToast('找不到問卷');return;}
+/* review 帶入時顯示待確認的新問卷，關閉後回到通知清單 */
+function viewIntake(ph,review){
+  var d=review||INTAKE_DATA[ph];if(!d){showToast('找不到問卷');return;}
   function row(l,v){return v?'<div class="status-row"><span style="color:var(--slate);min-width:96px;flex-shrink:0">'+l+'</span><span style="font-weight:600;text-align:right">'+esc(v)+'</span></div>':'';}
   function block(l,v){return v?'<div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="color:var(--slate);font-size:12px;margin-bottom:4px">'+l+'</div><div style="font-weight:600;white-space:pre-wrap;line-height:1.7">'+esc(v)+'</div></div>':'';}
   function sec(t){return '<div class="sec-label">'+t+'</div>';}
@@ -2464,7 +2528,8 @@ function viewIntake(ph){
     +(ref?sec('得知管道')+row('如何得知',ref):'')
     +sec('主訴與症狀')+row('主訴',d.complaint)+row('持續時間',d.duration)+(d.vas!=null?row('疼痛強度',(d.vas||0)+' 分（VAS 0-10）'):'')+row('患處',asList(d.bodyParts).join('、'))
     +(hasHist?sec('健康史')+block('已知病史',d.medicalHistory)+block('受傷經驗',d.injuryHistory)+block('手術經驗',d.surgeryHistory)+block('運動習慣',d.exerciseHabit):'');
-  modal('<div class="modal-head" style="background:var(--navy)">初診問卷 - '+esc(d.name||'')+'<button class="x" aria-label="關閉" onclick="closeModal()">&times;</button></div><div class="modal-body">'+html+'</div><div class="modal-foot"><button class="btn gray" onclick="closeModal()">關閉</button></div>');
+  var back=review?'openNotifyPanel()':'closeModal()';
+  modal('<div class="modal-head" style="background:var(--navy)">'+(review?'待確認的新問卷':'初診問卷')+' - '+esc(d.name||'')+'<button class="x" aria-label="關閉" onclick="'+back+'">&times;</button></div><div class="modal-body">'+(review?'<div class="banner warn"><span>!</span><div>這是線上重新送出、尚未採用的問卷；目前病歷上的問卷內容不變。確認是本人後，請在通知清單按「採用新問卷」。</div></div>':'')+html+'</div><div class="modal-foot"><button class="btn gray" onclick="'+back+'">'+(review?'返回':'關閉')+'</button></div>');
 }
 function tagModal(ph){var p=getPatient(ph);if(!p)return;modal('<div class="modal-head" style="background:var(--navy)">'+esc(p.name)+' - 標籤<button class="x" aria-label="關閉" onclick="closeModal();saveAll()">&times;</button></div><div class="modal-body"><div id="tagList"></div><div style="height:1px;background:var(--line);margin:14px 0"></div><div class="sec-label">新增標籤</div><div class="row" style="gap:8px"><input id="ntName" placeholder="標籤名稱" style="flex:1;padding:9px;border:1.5px solid var(--mist);border-radius:8px;outline:none"><input id="ntColor" type="color" value="#3b82f6" style="width:40px;height:36px;border:1.5px solid var(--mist);border-radius:8px"><button class="btn sm" onclick="addTag(\''+escJs(ph)+'\')">新增</button></div></div><div class="modal-foot"><button class="btn" onclick="closeModal();go(\'patients\')">完成</button></div>');renderTagList(ph);}
 function renderTagList(ph){var tags=peekTags(ph);setHTML('tagList',ALL_PT_TAGS.map(function(t){var on=tags.indexOf(t.id)>-1;return '<div class="row" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><button onclick="toggleTag(\''+escJs(ph)+'\',\''+escJs(t.id)+'\')" style="width:24px;height:24px;border:1.5px solid '+safeColor(t.color)+';border-radius:6px;background:'+(on?safeColor(t.color):'#fff')+';color:#fff;cursor:pointer;flex-shrink:0">'+(on?'&check;':'')+'</button><input type="color" value="'+safeColor(t.color)+'" onchange="editTagColor(\''+escJs(t.id)+'\',this.value,\''+escJs(ph)+'\')" style="width:30px;height:30px;border:1.5px solid var(--mist);border-radius:6px;padding:0;flex-shrink:0;cursor:pointer"><input value="'+esc(t.name)+'" oninput="editTagName(\''+escJs(t.id)+'\',this.value)" style="flex:1;font-weight:600;border:1.5px solid var(--mist);border-radius:7px;padding:7px 9px;outline:none"><button class="shift-del" onclick="delTag(\''+escJs(t.id)+'\',\''+escJs(ph)+'\')" style="flex-shrink:0">&times;</button></div>';}).join(''));}
