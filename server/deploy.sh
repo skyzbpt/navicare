@@ -104,6 +104,9 @@ if gcloud scheduler jobs describe "$JOB" --location "$REGION" >/dev/null 2>&1; t
 else
   gcloud scheduler jobs create http "$JOB" --location "$REGION" --schedule "$REMINDER_CRON" --time-zone "Asia/Taipei" \
     --uri "$URL/cron/tomorrow-reminders" --http-method POST --headers "X-Cron-Secret=${CRON_SECRET}" >/dev/null
+  # 第一次建立時先暫停：切換前仍由舊系統（Render）每天推播，兩邊同時跑病患會收到兩次。切換當天再 resume（DEPLOY.md 切換順序）
+  gcloud scheduler jobs pause "$JOB" --location "$REGION" >/dev/null
+  echo "每日提醒排程已建立，先維持「暫停」；切換當天再恢復：gcloud scheduler jobs resume $JOB --location $REGION"
 fi
 
 say "完成！後端網址："
@@ -116,5 +119,5 @@ echo "下一步："
 echo "  1. bash smoke-test.sh $URL           # 自動驗收公開端點"
 echo "  2. LINE Console 三個網址改指向 $URL   （webhook / 兩個 LIFF，見 DEPLOY.md 步驟 5）"
 echo "  3. 前端切換（網址不同時）：bash ../scripts/switch-frontend.sh $URL"
-echo "  4. 登入還原資料並驗收（DEPLOY.md 步驟 7）"
-echo "  5. 手動測試一次每日提醒排程：gcloud scheduler jobs run $JOB --location $REGION"
+echo "  4. 合併 PR 後：暫停 Render 舊服務、恢復每日提醒排程，登入還原資料並驗收（DEPLOY.md 切換順序、步驟 7）"
+echo "     gcloud scheduler jobs resume $JOB --location $REGION"

@@ -7,14 +7,20 @@
 **合併 PR／部署新版 `index.html` 的那一刻，櫃台前端就會改連 Cloud Run**，舊系統的前端從此打不開。
 所以一定要依下面順序，在一個不營業的時段完成：
 
-1. **合併前**：照「快速部署」把後端架好（步驟 1–3），跑 `smoke-test.sh` 全部通過
+1. **合併前**：照「快速部署」把後端架好（步驟 1–3），跑 `smoke-test.sh` 全部通過。
+   `deploy.sh` 第一次建立的每日提醒排程是**暫停**狀態：切換前仍由舊系統每天推播，兩邊同時跑病患會收到兩次
 2. **合併前**：在**目前的**前端完成步驟 4（匯入全部線上送出 → 下載加密備份），並請所有人暫停輸入資料
 3. 步驟 5：LINE Webhook 與兩個 LIFF 改指向 Cloud Run
-4. 合併 PR（或部署新版 `index.html`）→ 步驟 7：以管理員登入還原備份、重新發布線上預約目錄、跑驗收清單
-5. 驗收通過再恢復營業；Render 保留至少一週再關閉
+4. 合併 PR（或部署新版 `index.html`）→ 到 Render 後台把舊服務**暫停（Suspend）**（舊系統每天會自動推播明日提醒，
+   不暫停的話病患會收到兩次、而且是切換前的舊資料；暫停可隨時 Resume）→ 恢復每日提醒排程
+   `gcloud scheduler jobs resume navicare-tomorrow-reminders --location asia-east1`
+   → 步驟 7：以管理員登入還原備份、重新發布線上預約目錄、跑驗收清單
+5. 驗收通過再恢復營業；Render 與 MongoDB 保持暫停至少一週再刪除
 
-**回復（rollback）**：在新系統下載一份加密備份 → `bash scripts/switch-frontend.sh https://line-webhook-x1ux.onrender.com`
-並部署該前端 → LINE Webhook／LIFF 改回 Render → 在舊系統還原剛才的備份。
+**回復（rollback）**：在新系統下載一份加密備份 → 暫停 Cloud Run 的每日提醒排程
+（`gcloud scheduler jobs pause navicare-tomorrow-reminders --location asia-east1`）→ Render 後台 Resume 舊服務
+→ `bash scripts/switch-frontend.sh https://line-webhook-x1ux.onrender.com` 並部署該前端
+→ LINE Webhook／LIFF 改回 Render → 在舊系統還原剛才的備份。
 
 ## ⚡ 快速部署（腳本版，推薦）
 
@@ -23,6 +29,8 @@
 ```bash
 git clone https://github.com/skyzbpt/navicare.git
 cd navicare/server
+# PR 合併前就要部署，所以先切到 PR 的分支（合併後 main 已包含，可略過這行）
+git checkout claude/affectionate-keller-gjnj57
 bash deploy.sh          # 互動式：輸入 3 個密碼、管理員帳號、每日提醒時間，其餘全自動（步驟 1–3、8）
 bash smoke-test.sh <部署完成印出的網址>   # 自動驗收公開端點 16 項
 ```
@@ -162,10 +170,11 @@ connect-src 'self' https://navicare-api-xxxx-de.a.run.app https://www.googleapis
 - [ ] LINE 好友：病患管理 → 綁定 LINE 清單有出現好友（好友傳訊或加好友後才會出現）
 - [ ] 用手機打開線上預約、初診問卷各送出一筆 → 通知鈴鐺出現 → 匯入成功
 - [ ] 推播：對一位已綁定的病患發 LINE 訊息、推播一張收據
-- [ ] 每日提醒：`gcloud scheduler jobs run navicare-tomorrow-reminders --location asia-east1` 後，明天有預約且已綁定 LINE 的病患收到提醒
+- [ ] 每日提醒：`gcloud scheduler jobs describe navicare-tomorrow-reminders --location asia-east1` 顯示 `state: ENABLED`。
+  **切換當天不要手動測試推播**（舊系統當天多半已推播過，病患會收到兩次）；隔天提醒時間過後，確認明天有預約且已綁定 LINE 的病患收到提醒
 - [ ] 服務與課程 → 發布到線上預約 → 線上預約頁看得到
 
-確認正常運作一週後再關閉 Render 服務與 MongoDB。
+確認正常運作一週後再刪除 Render 服務與 MongoDB（切換時已暫停）。
 
 ## 步驟 8：每日自動提醒（Cloud Scheduler）
 
@@ -173,6 +182,10 @@ connect-src 'self' https://navicare-api-xxxx-de.a.run.app https://www.googleapis
 `POST /cron/tomorrow-reminders`，推播明日預約提醒給已綁定 LINE 的病患。以 `X-Cron-Secret` 標頭驗證
 （密鑰只存在 Cloud Run 環境變數 `CRON_SECRET` 與排程設定），同一天只會送一次——排程重試或當天已按過
 「立即推播明日提醒」都不會重複發送。
+
+第一次建立時會先**暫停**（切換前由舊系統推播），切換當天執行
+`gcloud scheduler jobs resume navicare-tomorrow-reminders --location asia-east1` 才開始每天推播；
+之後重新執行 `deploy.sh` 只會更新時間與密鑰，不會改變暫停／啟用狀態。
 
 手動建立／修改（例如改成每天 19:30）：
 
