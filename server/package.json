@@ -1,0 +1,16 @@
+{
+  "name": "navicare-api",
+  "version": "1.0.0",
+  "description": "領航物理治療所後端 API（Google Cloud Run + PostgreSQL）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.13.1"
+  }
+}
